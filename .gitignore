@@ -1,0 +1,25 @@
+# Secrets and local config — never commit
+secret.pat
+profile.json
+producer/profile.json
+*.p8
+*.pem
+*.key
+.env
+
+# Python
+.venv/
+venv/
+__pycache__/
+*.pyc
+*.egg-info/
+
+# Facilitator-only materials — kept local, not published to the attendee repo
+outline.md
+script.md
+rehearsal.md
+
+# OS / editor cruft
+.DS_Store
+.idea/
+.vscode/
