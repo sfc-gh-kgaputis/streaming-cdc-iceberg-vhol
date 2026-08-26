@@ -323,8 +323,11 @@ step numbers here, when you talk to them.
   ```sql
   SHOW ICEBERG TABLES LIKE 'QUALITY_INSPECTIONS_JOURNAL%' IN SCHEMA MFG.RAW;
   SHOW STREAMS LIKE '%_JOURNAL_%_STREAM' IN SCHEMA MFG.RAW;
-  SHOW TASKS IN SCHEMA MFG.RAW;   -- expect zero rows
   ```
+  Do **not** add a "confirm zero tasks exist" check. The no-task fact matters, but it is
+  earned in Part 2 by finding the producer's own MERGE in `QUERY_HISTORY` via its
+  `QUERY_TAG` — proving a negative in a checkpoint teaches nothing and reads as
+  archaeology.
 - **I (ingest):** both sources landing.
   ```sql
   SELECT COUNT(*) AS journal_events, COUNT_IF(EVENT_TYPE='IncrementalUpdateRows') AS updates

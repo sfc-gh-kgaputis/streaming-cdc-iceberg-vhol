@@ -285,8 +285,9 @@ CRON expression acting as an internal *eligibility gate* (the flow default is se
 minute). The producer in this lab does exactly the same thing — so the merge you will watch is issued
 by the simulated connector, not by Snowflake scheduling.
 
-**Checkpoint:** `SHOW TASKS IN SCHEMA MFG.RAW` returns **zero rows**. That is correct, not a missing
-step — and it is the single most common thing to get wrong about how Openflow works.
+**Checkpoint:** the journal reports Iceberg format version 3, and the stream reports
+`mode = APPEND_ONLY`. You will see the merge itself in Part 2, in query history — issued by the
+connector, not by Snowflake.
 
 Now verify everything, before building anything on top:
 

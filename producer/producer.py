@@ -42,6 +42,7 @@ from __future__ import annotations
 import argparse
 import copy
 import json
+import pathlib
 import random
 import signal
 import sys
@@ -130,6 +131,54 @@ REINSPECT_MINUTES = 3.0
 # Share of the failed backlog the inspectors overturn. Deliberately well under
 # 1.0: a corrected bucket should visibly improve, not become perfect.
 REINSPECT_FRACTION = 0.4
+
+
+# The lab identity is pinned, not discovered. A PAT is bound to the user it was
+# minted for, so if profile.json names anyone else authentication fails with an
+# error that mentions neither the user nor the token. Observed 26 Aug: a Desktop
+# run wrote the *connected* user (the signup admin) into profile.json instead of
+# the lab user, because CURRENT_USER() was queried rather than the value being
+# set literally.
+LAB_USER = "HOL_USER"
+
+
+def repair_profile(profile_path: str) -> dict[str, Any]:
+    """Load profile.json, and correct the two fields that are known to drift.
+
+    The Snowpipe Streaming SDK reads this file itself (`profile_json=`), so the
+    file has to be right -- pinning the values in Python is not enough.
+
+    Two drifts are corrected, both seen in practice:
+
+    * `user` naming anyone other than the lab user. A PAT only works for its own
+      user, so this is always wrong.
+    * a stale token, after `ALTER USER ... ROTATE PROGRAMMATIC ACCESS TOKEN`.
+      Rotation mints a new secret under the original token name and leaves the old
+      one alive on a 24h grace, so a stale profile keeps working right up until it
+      abruptly does not. `secret.pat` is the source of truth.
+    """
+    path = pathlib.Path(profile_path)
+    profile = json.loads(path.read_text())
+    fixed = []
+
+    if profile.get("user") != LAB_USER:
+        log(f"[profile] user was {profile.get('user')!r}; the PAT belongs to {LAB_USER}")
+        profile["user"] = LAB_USER
+        fixed.append("user")
+
+    secret = pathlib.Path(path.parent.parent / "secret.pat")
+    if secret.exists():
+        token = secret.read_text().strip()
+        if token and token != profile.get("personal_access_token"):
+            log("[profile] token differed from secret.pat; taking secret.pat as truth")
+            profile["personal_access_token"] = token
+            fixed.append("token")
+
+    if fixed:
+        path.write_text(json.dumps(profile, indent=2) + "\n")
+        log(f"[profile] rewrote {path} ({', '.join(fixed)})")
+
+    return profile
 
 
 def connect_sql(profile: dict[str, Any], query_tag: str | None = None) -> Any:
@@ -1038,8 +1087,7 @@ def main() -> None:
 
     profile = None
     if not args.dry_run:
-        with open(args.profile) as fh:
-            profile = json.load(fh)
+        profile = repair_profile(args.profile)
 
     def handle_stop(_sig: Any, _frm: Any) -> None:
         log("stopping...")
