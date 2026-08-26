@@ -142,7 +142,7 @@ Cortex Code names the `coco-iceberg-cdc-vhol` skill as active.
 
 ## D. Set up the producer environment
 
-> Set up the data producer environment: create the .venv from producer/requirements.txt, then build producer/profile.json from my active connection details and the token in secret.pat.
+> Set up the data producer environment: the venv, and producer/profile.json.
 
 The skill handles the rest — detecting your OS, using the right interpreter path for it, and why macOS
 needs a virtual environment. Two packages, a few seconds.
@@ -181,6 +181,16 @@ context. This is the one Part where that is worth the extra step.
 
 > Create the lab environment and both landing tables.
 
+Two schemas, and the split is the shape of the pipeline rather than the shape of the feeds:
+
+| Schema | Holds | Why |
+|---|---|---|
+| `MFG.RAW` | The CDC destination table, its journal and stream, and the telemetry table | Both feeds land here. The journal sits beside its destination table because that is where the real Openflow connector puts it. |
+| `MFG.ANALYTICS` | All four Dynamic Tables, the semantic view, the agent | Everything derived. Nothing writes here — Snowflake maintains all of it. |
+
+By the end you will be able to read the pipeline off a fully-qualified name. A table in `RAW` arrived
+from outside; a table in `ANALYTICS` was computed for you.
+
 Watch for a `USE SCHEMA` before each Iceberg `CREATE`. That is not cosmetic, and it is the least
 obvious thing in this lab:
 
@@ -203,7 +213,7 @@ asymmetry is deliberate — the CDC destination is a standard table because it i
 Real CDC connectors do not write your destination table directly. They append change events to a
 **journal**, and a merge processor applies that journal on a schedule. Build that too:
 
-> Create the CDC journal table MFG.RAW.QUALITY_INSPECTIONS_JOURNAL and its append-only stream, matching the Openflow connector's journal schema.
+> Create the CDC journal table and its append-only stream.
 
 Two objects, and deliberately **no task**. The connector does not create one: its merge processor runs
 inside the connector runtime and issues the MERGE itself over its own Snowflake connection, with a
@@ -227,7 +237,7 @@ v2 → v3 upgrade, so a wrong answer here gets more expensive with every Part.
 
 **Approach: direct execution.** Everything here is read-only.
 
-> Start the producer in the background with both the CDC and telemetry sources, then verify rows are landing in the journal, the destination table and the telemetry table.
+> Start the producer in the background with both sources, then verify rows are landing.
 
 Two sources doing two different jobs:
 
@@ -251,7 +261,7 @@ anywhere in this lab or in `solutions/`. Snowpipe Streaming auto-created them.
 
 Now the part that is actually about change data capture:
 
-> Show me the raw change events in the journal, the mix of event types, and how far behind the destination table is.
+> Show me the journal's change events, the event-type mix, and the destination's lag.
 
 | `EVENT_TYPE` | What it carries |
 |---|---|
@@ -295,7 +305,7 @@ it works identically here.
 **Approach: generate then confirm.** One predicate in here is the difference between a correct
 pipeline and a plausible-looking wrong one. Read for it.
 
-> Create the two layer-one Dynamic Iceberg Tables: INSPECTIONS_ACTIVE over QUALITY_INSPECTIONS, and STATION_HEALTH over STATION_TELEMETRY. Target lag one minute.
+> Create the two layer-one Dynamic Tables, INSPECTIONS_ACTIVE and STATION_HEALTH.
 
 `INSPECTIONS_ACTIVE` carries the predicate that matters: `WHERE NOT _SNOWFLAKE_DELETED`. Omit it and
 voided frames count against yield forever.
@@ -304,7 +314,7 @@ voided frames count against yield forever.
 an **empty** `refresh_mode_reason` for both. A populated `refresh_mode_reason` names its own cause —
 read it rather than guessing.
 
-> Create the two Gold Dynamic Iceberg Tables: YIELD_BY_LINE_5MIN joining INSPECTIONS_ACTIVE to STATION_HEALTH on line and five-minute bucket, and DEFECT_COUNTS_5MIN at defect grain. Target lag one minute.
+> Create the two Gold Dynamic Tables, YIELD_BY_LINE_5MIN and DEFECT_COUNTS_5MIN.
 
 `YIELD_BY_LINE_5MIN` is the join that earns the second data source: yield and booth humidity in the
 same row, for the same 5-minute interval. Yield alone tells you PAINT is scrapping frames. Yield
@@ -336,7 +346,7 @@ anything missing. This is also the fastest way for the presenter to see who is s
 
 **Approach: sequential prompts.** Two objects, and the second depends on the first being right.
 
-> Create the semantic view MFG.ANALYTICS.PLANT_FLOOR_SV over the Gold Dynamic Tables, then run the three checkpoint queries.
+> Create the semantic view PLANT_FLOOR_SV, then run its three checkpoint queries.
 
 **Checkpoint:** all three `SEMANTIC_VIEW()` queries return rows. In steady state each line sits around
 95–99% first-pass yield.

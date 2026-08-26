@@ -20,8 +20,10 @@ result.
 
 ## Fixed context
 
-- Database `MFG`. Two schemas: `CDC` (the destination and the pipeline) and
-  `RAW` (the streaming landing zone). Warehouse `HOL_WH`, Gen2 XSMALL.
+- Database `MFG`. Two schemas: `RAW` (both landing zones — the CDC destination,
+  its journal and stream, and the streaming telemetry table) and `ANALYTICS`
+  (everything derived — all four Dynamic Tables, the semantic view, the agent).
+  Warehouse `HOL_WH`, Gen2 XSMALL.
 - **Everything is Apache Iceberg v3 on Snowflake-managed storage.** Attendee
   accounts have no connected cloud storage, so they cannot create an external
   volume. `EXTERNAL_VOLUME = 'SNOWFLAKE_MANAGED'`, `CATALOG = 'SNOWFLAKE'`, and
@@ -195,9 +197,11 @@ Build from the verbatim spec in `references/agent_spec.md`.
 
 ## Workflow
 
-Follow the attendee's lead. Each step maps to one prompt.
+Follow the attendee's lead. Each step maps to one prompt. The **Part** on each step
+is the Part number the attendee sees in the README — use their vocabulary, not the
+step numbers here, when you talk to them.
 
-0. **Producer setup** — two tasks the attendee will prompt for:
+0. **Producer setup — Setup D, pre-work** — two tasks the attendee will prompt for:
 
    - **Detect the OS first.** Check the platform before running any shell command
      and use the matching interpreter paths. This lab runs on macOS, Linux, and
@@ -228,34 +232,34 @@ Follow the attendee's lead. Each step maps to one prompt.
      `secret.pat` is missing, ask the attendee to paste their `HOL_PAT` token
      into it first.
 
-1. **Environment + tables** — create `MFG`, schemas `CDC` and `RAW`, the database-level
+1. **Environment + tables — Part 1** — create `MFG`, schemas `RAW` and `ANALYTICS`, the database-level
    version default, **the three Iceberg defaults on both schemas**, `HOL_WH`, then
    `QUALITY_INSPECTIONS` and `STATION_TELEMETRY`. `USE SCHEMA` before each Iceberg
    create. Then run the preflight (Checkpoint P).
 
-2. **CDC journal** — create the journal table and its `APPEND_ONLY` stream. Two objects,
+2. **CDC journal — Part 1** — create the journal table and its `APPEND_ONLY` stream. Two objects,
    verbatim from `references/object_model.md`. **No task** — the producer issues the
    MERGE, because that is what the connector does. Checkpoint J.
 
-3. **Start the producer** — **in the background** (Bash `run_in_background`) with the
+3. **Start the producer — Part 2** — **in the background** (Bash `run_in_background`) with the
    venv interpreter, so it keeps streaming while later layers build:
    `<venv-python> producer/producer.py --profile producer/profile.json --cdc --telemetry`
    Then Checkpoint I. For the incident (step 7) and the recovery (step 8), stop the
    running producer and restart it with the extra flag.
 
-4. **Inspect the journal** — walk the change events, the three `EVENT_TYPE` shapes, the
+4. **Inspect the journal — Part 2** — walk the change events, the three `EVENT_TYPE` shapes, the
    `SF_METADATA` `PARSE_JSON` quirk, and above all the **merge gate**: the journal always
    leads the destination, and `QUERY_HISTORY` filtered on the connector's `QUERY_TAG`
    shows one MERGE per minute at second :00, each finishing in a second or two.
    Checkpoint G-gate. Do not skip this step — it is the best lesson in the architecture.
 
-5. **Layer 1** — `INSPECTIONS_ACTIVE` and `STATION_HEALTH`. Checkpoint D.
+5. **Layer 1 — Part 3** — `INSPECTIONS_ACTIVE` and `STATION_HEALTH`. Checkpoint D.
 
-6. **Gold** — `YIELD_BY_LINE_5MIN` (the join) and `DEFECT_COUNTS_5MIN`.
+6. **Gold — Part 3** — `YIELD_BY_LINE_5MIN` (the join) and `DEFECT_COUNTS_5MIN`.
    Checkpoint Y. Then show refresh history, and if asked, demonstrate the `MODE()`
    failure as a real teaching moment.
 
-7. **Semantic view + agent** — emit both verbatim from `references/`. For the semantic
+7. **Semantic view + agent — Part 4** — emit both verbatim from `references/`. For the semantic
    view follow its syntax rules exactly (`AS` not `=`, `WITH SYNONYMS`, alias-qualified
    metrics); if a create fails, re-emit the verbatim DDL rather than improvising the
    grammar. For the agent, dollar-quote with `$$` (never a named tag like `$spec$`) and
@@ -263,11 +267,11 @@ Follow the attendee's lead. Each step maps to one prompt.
    with it in **Snowsight → AI & ML → Agents → Cascade Plant Analyst**, on the detail
    page's chat panel — not here. They do NOT need to Publish.
 
-8. **The incident** — restart the producer with `--incident`. Booth humidity ramps
+8. **The incident — Part 5** — restart the producer with `--incident`. Booth humidity ramps
    first, then PAINT defects spike ~90 s later. Have the attendee stopwatch each layer.
    Then ask the agent *why*. Checkpoint X.
 
-9. **The recovery** — restart with `--reinspect`. Inspectors overturn failed frames to
+9. **The recovery — Part 5** — restart with `--reinspect`. Inspectors overturn failed frames to
    PASS and **yield goes back up**, including for buckets that already reported.
    Confirm the DTs are still INCREMENTAL. Checkpoint R.
 
