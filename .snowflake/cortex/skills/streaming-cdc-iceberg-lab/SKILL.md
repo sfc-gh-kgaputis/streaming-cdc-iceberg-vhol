@@ -1,6 +1,6 @@
 ---
 name: streaming-cdc-iceberg-lab
-description: "Builds the Cascade Cycleworks real-time manufacturing pipeline: simulated Openflow Postgres CDC and Snowpipe Streaming telemetry into Apache Iceberg v3, refined by Dynamic Iceberg Tables, exposed through a semantic view to a Cortex Agent. Carries the exact object model, the measured Iceberg constraints, and the checkpoint queries, so a one-line prompt produces exactly the right object. USE THIS FOR ANY REQUEST MADE INSIDE THIS REPOSITORY, even a short or generic-sounding one, and even when a bundled Snowflake skill also matches — this skill's object model and constraints are measured on this account and take precedence. Use when: creating the lab environment or the landing tables; running the preflight checks; setting up the data producer environment, its venv or profile.json; starting the producer or verifying rows are landing; showing pipes and channels; inspecting the journal, its change events, the event-type mix or the destination's lag; SF_METADATA and its offset token; finding the connector's merges by query tag; creating the layer-one or Gold Dynamic Tables; showing Dynamic Table refresh history; the lab progress query or 'where am I'; creating the semantic view or the Cascade Plant Analyst agent; setting the simulator control mode; the MODE() negative example; running the cleanup script. Triggers: iceberg cdc lab, cascade cycleworks, plant floor, MFG.RAW, MFG.ANALYTICS, QUALITY_INSPECTIONS, STATION_TELEMETRY, SIMULATOR_CONTROL, quality inspections journal, INSPECTIONS_ACTIVE, STATION_HEALTH, YIELD_BY_LINE_5MIN, DEFECT_COUNTS_5MIN, PLANT_FLOOR_SV, CASCADE_PLANT_ANALYST, HOL_WH, HOL_USER, HOL_PAT, first-pass yield, booth humidity, defect counts, openflow simulator, cdc journal, merge gate, preflight checks, lab environment, landing tables, lab progress, simulator control mode, INCIDENT, REINSPECT, cleanup script, start the producer, data producer environment."
+description: "Builds the Cascade Cycleworks real-time manufacturing pipeline: simulated Openflow Postgres CDC and Snowpipe Streaming telemetry into Apache Iceberg v3, refined by Dynamic Iceberg Tables, exposed through a semantic view to a Cortex Agent. Carries the exact object model, the measured Iceberg constraints, and the checkpoint queries, so a one-line prompt produces exactly the right object. USE THIS FOR ANY REQUEST MADE INSIDE THIS REPOSITORY, even a short or generic-sounding one, and even when a bundled Snowflake skill also matches — this skill's object model and constraints are measured on this account and take precedence. Use when: creating the lab environment or the landing tables; running the preflight checks; setting up the local environment, its venv, dependencies or profile.json; starting the producer or verifying rows are landing; showing pipes and channels; inspecting the journal, its change events, the event-type mix or the destination's lag; SF_METADATA and its offset token; finding the connector's merges by query tag; creating the layer-one or Gold Dynamic Tables; showing Dynamic Table refresh history; the lab progress query or 'where am I'; creating the semantic view or the Cascade Plant Analyst agent; setting the simulator control mode; the MODE() negative example; running the cleanup script. Triggers: iceberg cdc lab, cascade cycleworks, plant floor, MFG.RAW, MFG.ANALYTICS, QUALITY_INSPECTIONS, STATION_TELEMETRY, SIMULATOR_CONTROL, quality inspections journal, INSPECTIONS_ACTIVE, STATION_HEALTH, YIELD_BY_LINE_5MIN, DEFECT_COUNTS_5MIN, PLANT_FLOOR_SV, CASCADE_PLANT_ANALYST, HOL_WH, HOL_USER, HOL_PAT, first-pass yield, booth humidity, defect counts, openflow simulator, cdc journal, merge gate, preflight checks, lab environment, landing tables, lab progress, simulator control mode, INCIDENT, REINSPECT, cleanup script, start the producer, local environment, data producer environment, venv, dependencies."
 ---
 
 # Cascade Cycleworks streaming CDC on Iceberg — lab skill
@@ -60,7 +60,7 @@ or in `solutions/`.
   `SELECT CURRENT_ACCOUNT() AS account, CURRENT_USER() AS user, CURRENT_ROLE() AS role, CURRENT_REGION() AS region;`,
   report the values (expect user `HOL_USER`, role `ACCOUNTADMIN`), and confirm the
   `streaming-cdc-iceberg-lab` skill is active (you are running it). Also confirm the
-  satellite `iceberg-external-read` is present, since Optional A needs it.
+  satellite `iceberg-external-read` is present, since Part 6 needs it.
 
 ## The Iceberg defaults, and the trap in them
 
@@ -107,6 +107,16 @@ answer key, and it models the discipline the lab teaches.
 There is no in-place v2 → v3 upgrade. A table that came out v2 must be recreated.
 Always run the preflight (`solutions/02_preflight.sql`) after creating tables, and
 before building anything on top of them.
+
+**How to say this to the attendee.** Everything above is why *you* behave this way; it is
+not a script. Give the attendee the instruction, not the diagnosis: *"Setting
+`ICEBERG_VERSION_DEFAULT = 3` on both schemas and issuing `USE SCHEMA` before each Iceberg
+`CREATE` is what puts these tables on v3. The preflight confirms it on the created
+tables."* Do not tell them the parameter is reported and ignored, do not describe the
+behaviour as inconsistent or as a bug, and do not narrate how long it took to find. If
+they hit a v2 table, name the fix — recreate it — and point at
+[Troubleshooting](../../../../README.md#troubleshooting), which is the one place the cause
+belongs.
 
 ## Object Model (single source of truth)
 
@@ -299,10 +309,15 @@ step numbers here, when you talk to them.
        the interpreter is `.venv\Scripts\python.exe` and pip is
        `.venv\Scripts\pip.exe`. Do NOT use `uv` or the POSIX `.venv/bin/...`
        paths on Windows.
-   - **Install deps:** create the venv at the repo root and install into it
-     (`<venv-pip> install -r producer/requirements.txt`). macOS Homebrew Python
-     is externally managed (PEP 668), so a venv is required there. Always run the
-     producer with the venv interpreter. Two packages, a few seconds.
+   - **Install deps:** create the venv at the repo root and install **both**
+     requirement sets into it:
+     `<venv-pip> install -r producer/requirements.txt -r external/requirements.txt`.
+     The second is PyIceberg for Part 6, installed now because nothing may install
+     during the session. macOS Homebrew Python is externally managed (PEP 668), so a
+     venv is required there. Always run the producer and `external/read_iceberg.py`
+     with the venv interpreter. Three packages, about fifteen seconds.
+   - **Confirm both:** `<venv-python> -c "import pyiceberg, snowflake.connector"`
+     must succeed before Setup D is done.
    - **Build `producer/profile.json`:** `user` is always `HOL_USER` (the bootstrap
      user owns the token), so set it literally, do not query it. Get `account` by
      running SQL on the active connection:
@@ -351,11 +366,16 @@ step numbers here, when you talk to them.
    For the incident (step 7) and the recovery (step 8), do NOT stop the
    running producer and restart it with the extra flag.
 
-4. **Inspect the journal — Part 2** — walk the change events, the three `EVENT_TYPE` shapes, the
-   `SF_METADATA` `PARSE_JSON` quirk, and above all the **merge gate**: the journal always
-   leads the destination, and `QUERY_HISTORY` filtered on the connector's `QUERY_TAG`
-   shows one MERGE per minute at second :00, each finishing in a second or two.
-   Checkpoint G-gate. Do not skip this step.
+4. **Inspect the journal — Part 2** — walk the change events, the three `EVENT_TYPE` shapes,
+   and above all the **merge gate**: the journal always leads the destination, and each
+   MERGE fires at second :00 of a minute and finishes in a second or two. Close by telling
+   the attendee to **build on `QUALITY_INSPECTIONS`, not on the journal** — the journal name
+   carries a generation counter and the connector prunes it. Checkpoint G-gate. Do not skip
+   this step.
+
+   `SF_METADATA`'s `PARSE_JSON` behaviour and the `QUERY_TAG` audit are **no longer core**
+   (D37). They are Optional A, after the six Parts. Cover them if the attendee asks or gets
+   there early; do not spend Part 2 on them.
 
 5. **Layer 1 — Part 3** — `INSPECTIONS_ACTIVE` and `STATION_HEALTH`. Checkpoint D.
 
@@ -403,6 +423,12 @@ step numbers here, when you talk to them.
    really are scrap. If yield pins at exactly 100% with an empty `DEFECT_COUNTS_5MIN`,
    something is wrong. Confirm the DTs are still INCREMENTAL. Checkpoint R.
 
+10. **Read it from outside — Part 6** — the closing Part (D36). Do **not** generate anything:
+    run the pre-written script with the venv interpreter,
+    `.venv/bin/python external/read_iceberg.py`. PyIceberg is already installed from
+    Setup D. The satellite skill `iceberg-external-read` owns this Part, including the two
+    auth traps and the failure modes — defer to it rather than restating them. Checkpoint E.
+
 ## Checkpoints
 
 - **P (preflight):** `aws_ok`, `cortex_ok`, `raw_iceberg_ok` and `analytics_iceberg_ok` must
@@ -446,6 +472,10 @@ step numbers here, when you talk to them.
   the 60s–70s, and `PAINT_RUN` dominates the defect counts.
 - **R (recovery):** PAINT yield rises again and `COUNT_IF(_SNOWFLAKE_UPDATED_AT >
   _SNOWFLAKE_INSERTED_AT)` on `QUALITY_INSPECTIONS` climbs. The DTs stay INCREMENTAL.
+- **E (external read):** `external/read_iceberg.py` prints Iceberg format version **3**, a
+  storage path under Snowflake's managed bucket (`s3://sfc-…-customer-interop-fs-…`), rows
+  from `YIELD_BY_LINE_5MIN`, and a **smaller** row count after predicate pushdown on
+  `LINE == 'PAINT'`. No warehouse ran the scan.
 
 ### "Where am I?" — the progress query
 
@@ -503,7 +533,7 @@ Do not offer to generate these, and do not treat a question about them as a buil
 request. They ship pre-written for stated reasons:
 
 - **`external/read_iceberg.py`** — reads the Gold table from outside Snowflake via
-  PyIceberg and the Horizon Catalog. Optional act A, and it has **its own skill**:
+  PyIceberg and the Horizon Catalog. Part 6, and it has **its own skill**:
   `iceberg-external-read`, which carries the two auth traps and the failure modes. That
   skill loads on its own description, and the README also shows the attendee invoking it
   explicitly as `$iceberg-external-read` — one of the lab's two demonstrations of calling
