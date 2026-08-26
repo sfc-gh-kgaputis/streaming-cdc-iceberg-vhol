@@ -263,7 +263,8 @@ step numbers here, when you talk to them.
 3. **Start the producer — Part 2** — **in the background** (Bash `run_in_background`) with the
    venv interpreter, so it keeps streaming while later layers build:
    `<venv-python> producer/main.py --profile producer/profile.json --cdc --telemetry`
-   Then Checkpoint I. For the incident (step 7) and the recovery (step 8), stop the
+   Then Checkpoint J (what the connector built) and Checkpoint I (both feeds landing).
+   For the incident (step 7) and the recovery (step 8), do NOT stop the
    running producer and restart it with the extra flag.
 
 4. **Inspect the journal — Part 2** — walk the change events, the three `EVENT_TYPE` shapes, the
@@ -328,16 +329,18 @@ step numbers here, when you talk to them.
 - **P (preflight):** `aws_ok`, `cortex_ok`, `raw_iceberg_ok` and `analytics_iceberg_ok` must
   all be TRUE, and every existing Iceberg object must report `is_v3 = TRUE`.
   See `solutions/02_preflight.sql`. Do not proceed past a FALSE.
-- **J (journal objects):** the journal reports Iceberg format version 3 and the stream
-  reports `mode = APPEND_ONLY`. There should be **no** tasks in the schema:
+- **J (the connector's own objects, Part 2):** on first run the producer logs
+  `[connector] destination table ready` / `journal ready` / `journal stream ready`. Confirm
+  what it built rather than what the attendee built:
   ```sql
   SHOW ICEBERG TABLES LIKE 'QUALITY_INSPECTIONS_JOURNAL%' IN SCHEMA MFG.RAW;
   SHOW STREAMS LIKE '%_JOURNAL_%_STREAM' IN SCHEMA MFG.RAW;
   ```
-  Do **not** add a "confirm zero tasks exist" check. The no-task fact matters, but it is
-  earned in Part 2 by finding the producer's own MERGE in `QUERY_HISTORY` via its
-  `QUERY_TAG` — proving a negative in a checkpoint teaches nothing and reads as
-  archaeology.
+  The journal must report Iceberg format version 3 and the stream `mode = APPEND_ONLY`.
+  `QUALITY_INSPECTIONS` must exist and must **not** be Iceberg. Do not add a
+  "confirm zero tasks exist" check — proving a negative teaches nothing, and the no-task
+  fact is earned properly at G-gate by finding the producer's MERGE via its `QUERY_TAG`.
+
 - **I (ingest):** both sources landing.
   ```sql
   SELECT COUNT(*) AS journal_events, COUNT_IF(EVENT_TYPE='IncrementalUpdateRows') AS updates
@@ -359,7 +362,7 @@ step numbers here, when you talk to them.
   `refresh_mode_reason`.
 - **Y (gold):** yield by line for recent buckets. Three lines, each around 95–99% in
   steady state, with `HUMIDITY` populated for PAINT only.
-- **X (incident):** PAINT `FIRST_PASS_YIELD_PCT` drops into the 70s while WELD and
+- **X (incident):** PAINT `FIRST_PASS_YIELD_PCT` drops into the **80s** while WELD and
   ASSEMBLY stay in the high 90s, `AVG_BOOTH_HUMIDITY` for PAINT climbs from ~44 into
   the 60s–70s, and `PAINT_RUN` dominates the defect counts.
 - **R (recovery):** PAINT yield rises again and `COUNT_IF(_SNOWFLAKE_UPDATED_AT >
