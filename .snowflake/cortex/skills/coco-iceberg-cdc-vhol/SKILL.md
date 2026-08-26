@@ -24,6 +24,10 @@ result.
   its journal and stream, and the streaming telemetry table) and `ANALYTICS`
   (everything derived — all four Dynamic Tables, the semantic view, the agent).
   Warehouse `HOL_WH`, Gen2 XSMALL.
+- `MFG.RAW.SIMULATOR_CONTROL` is the simulator's **control plane** — a standard table
+  holding `MODE` (`STEADY` | `INCIDENT` | `REINSPECT`) and `UPDATED_AT`. Writing to it is
+  how Part 5 changes the plant. **The producer is started once, in Part 2, and is never
+  stopped or restarted until cleanup.**
 - **Everything is Apache Iceberg v3 on Snowflake-managed storage.** Attendee
   accounts have no connected cloud storage, so they cannot create an external
   volume. `EXTERNAL_VOLUME = 'SNOWFLAKE_MANAGED'`, `CATALOG = 'SNOWFLAKE'`, and
@@ -267,11 +271,40 @@ step numbers here, when you talk to them.
    with it in **Snowsight → AI & ML → Agents → Cascade Plant Analyst**, on the detail
    page's chat panel — not here. They do NOT need to Publish.
 
-8. **The incident — Part 5** — restart the producer with `--incident`. Booth humidity ramps
+8. **The incident — Part 5** — **do NOT restart the producer.** It has been running since
+   step 3 and it stays running for the rest of the lab. Change the *world* instead, by
+   writing to the control table:
+
+   ```sql
+   INSERT INTO MFG.RAW.SIMULATOR_CONTROL (MODE, UPDATED_AT)
+     VALUES ('INCIDENT', CURRENT_TIMESTAMP()::TIMESTAMP_NTZ);
+   ```
+
+   Valid modes are `STEADY`, `INCIDENT` and `REINSPECT`; the newest row wins and the
+   producer picks it up within ~10 s. If an attendee asks you to stop or restart the
+   producer to change its behaviour, explain that a real Openflow connector runs
+   continuously — an incident changes the data at the source, it does not bounce the
+   connector — and that restarting also risks HTTP 409
+   `ERR_CHANNEL_HAS_UNCOMMITTED_DATA` from reopening a channel too soon.
+
+   Tell the attendee to watch the producer's own log: `booth_humidity` climbs away
+   from 44 within seconds, and `[cdc] PAINT defect rate -> 26%` follows ~90 s later.
+   That is the cascade, visible before any query. Booth humidity ramps
    first, then PAINT defects spike ~90 s later. Have the attendee stopwatch each layer.
    Then ask the agent *why*. Checkpoint X.
 
-9. **The recovery — Part 5** — restart with `--reinspect`. Inspectors overturn failed frames to
+9. **The recovery — Part 5** — again **no restart**. Write `REINSPECT`:
+
+   ```sql
+   INSERT INTO MFG.RAW.SIMULATOR_CONTROL (MODE, UPDATED_AT)
+     VALUES ('REINSPECT', CURRENT_TIMESTAMP()::TIMESTAMP_NTZ);
+   ```
+
+   This fixes the booth (humidity returns to ~44) and starts a **bounded** burst of
+   re-inspections — about 40% of the failed backlog, over ~3 minutes, then back to
+   normal cadence on its own. Yield for buckets that already reported goes UP but
+   does **not** reach 100%: some frames really are scrap. If yield pins at exactly
+   100% with an empty `DEFECT_COUNTS_5MIN`, something is wrong. Inspectors overturn failed frames to
    PASS and **yield goes back up**, including for buckets that already reported.
    Confirm the DTs are still INCREMENTAL. Checkpoint R.
 
@@ -343,6 +376,9 @@ with `SHOW AGENTS LIKE 'CASCADE_PLANT_ANALYST' IN SCHEMA MFG.ANALYTICS;`.
   There is no in-place v2 → v3 upgrade; a v2 table must be recreated.
 - Confirm the journal and its stream exist before starting the producer in `journal`
   mode — otherwise the events have nowhere to land.
+- Never stop or restart the producer to change its behaviour. Write to
+  `MFG.RAW.SIMULATOR_CONTROL` instead. Restarting teaches a false operational model and
+  risks HTTP 409 from reopening a channel within ~30 s.
 - Never create a Snowflake task for the merge. The connector does not, and doing so
   would teach attendees something false about the product.
 - Confirm `QUALITY_INSPECTIONS` and `STATION_TELEMETRY` both exist before starting the

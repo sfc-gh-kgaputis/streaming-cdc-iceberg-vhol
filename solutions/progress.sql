@@ -39,6 +39,7 @@ WITH expected AS (
     SELECT * FROM VALUES
       (1, 'Part 1', 'RAW',       'QUALITY_INSPECTIONS',         'table',           'CDC destination, maintained by the MERGE'),
       (2, 'Part 1', 'RAW',       'STATION_TELEMETRY',           'iceberg table',   'telemetry, straight from Snowpipe Streaming'),
+      (9, 'Part 1', 'RAW',       'SIMULATOR_CONTROL',           'table',           'control plane -- how Part 5 changes the plant'),
       (3, 'Part 1', 'RAW',       'QUALITY_INSPECTIONS_JOURNAL', 'iceberg journal', 'change events, connector-internal'),
       (4, 'Part 3', 'ANALYTICS', 'INSPECTIONS_ACTIVE',          'dynamic table',   'soft deletes filtered out'),
       (5, 'Part 3', 'ANALYTICS', 'STATION_HEALTH',              'dynamic table',   'telemetry rolled up per 5 min'),

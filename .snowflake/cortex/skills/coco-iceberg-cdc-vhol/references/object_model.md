@@ -110,6 +110,32 @@ CREATE OR REPLACE TABLE MFG.RAW.QUALITY_INSPECTIONS (
 );
 
 -- ---------------------------------------------------------------------
+-- The simulator's control plane.
+--
+-- This is how you change the WORLD in Part 5 without touching the pipeline.
+-- You write a row here; the running producer notices within ~10 seconds and
+-- the plant floor starts behaving differently. Streaming never stops.
+--
+-- That is not a lab shortcut, it is what the real thing looks like. An
+-- Openflow connector runs continuously. When a paint booth starts misbehaving
+-- nobody restarts the connector -- the data changes character at the source and
+-- the pipeline carries it through unchanged.
+--
+-- Deliberately a STANDARD table: it is operational metadata, not a feed and not
+-- derived from one. Making it Iceberg would buy nothing and would add one more
+-- schema where the ICEBERG_VERSION_DEFAULT session trap could bite.
+-- ---------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS MFG.RAW.SIMULATOR_CONTROL (
+  MODE        STRING,          -- STEADY | INCIDENT | REINSPECT
+  UPDATED_AT  TIMESTAMP_NTZ    -- newest row wins
+);
+
+-- Start the plant in a good mood.
+INSERT INTO MFG.RAW.SIMULATOR_CONTROL (MODE, UPDATED_AT)
+  SELECT 'STEADY', CURRENT_TIMESTAMP()::TIMESTAMP_NTZ
+  WHERE NOT EXISTS (SELECT 1 FROM MFG.RAW.SIMULATOR_CONTROL);
+
+-- ---------------------------------------------------------------------
 -- The streaming telemetry table: Iceberg, append-only.
 --
 -- Note what is NOT here: no CATALOG, no EXTERNAL_VOLUME, no ICEBERG_VERSION.

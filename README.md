@@ -239,6 +239,21 @@ v2 → v3 upgrade, so a wrong answer here gets more expensive with every Part.
 
 > Start the producer in the background with both sources, then verify rows are landing.
 
+**You start this once and leave it running for the rest of the lab.** You will never stop it, and
+you will never restart it. That is the point: a streaming pipeline is something you turn on and
+operate, not something you cycle every time conditions change.
+
+**Keep its output where you can see it.** It reports what the plant floor is doing, once a second:
+
+```
+[telem] rows=1860 booth_humidity~44.0
+[merge] gate fired: 122 rows applied in 1.5s (merges=1 rows_total=122)
+[cdc] inserts=62 updates=0 soft_deletes=1
+```
+
+That log is the fastest answer to "is it working?", and in Part 5 it is where you will see the
+incident begin — several seconds before any query shows it.
+
 Two sources doing two different jobs:
 
 - **CDC** → the journal, over Snowpipe Streaming. Stands in for Openflow's Postgres CDC connector:
@@ -371,7 +386,20 @@ interval it used. Keep this tab open — you need it in Part 5.
 
 **Approach: direct execution**, then read.
 
-> Stop the producer and restart it in the background with the incident flag.
+The producer is still running from Part 2, and it stays running. What changes is the **plant**, not
+the pipeline — you write a row to a control table and the running simulator picks it up within about
+ten seconds:
+
+> Trigger the paint booth incident.
+
+**Checkpoint:** the producer's log shows `booth_humidity` climbing away from 44 within seconds —
+`47.7`, `52.2`, `56.7` — and about 90 seconds later `[cdc] PAINT defect rate -> 26%`. You are
+watching cause precede effect in real time, before a single query.
+
+This is worth pausing on. A real Openflow connector runs continuously; when a paint booth starts
+misbehaving nobody restarts the connector. The data changes character at the source and the pipeline
+carries it through untouched. The control table is the source changing its mind — the streaming
+plumbing never notices.
 
 Now watch the cascade arrive layer by layer, and time it:
 
@@ -393,7 +421,7 @@ in Part 3. An agent on the CDC feed alone could tell you *what* happened and nev
 
 Then the recovery:
 
-> Stop the producer and restart it in the background with the reinspect flag.
+> Send the inspectors back in.
 
 Inspectors re-check failed frames and overturn them to PASS. This is an `UPDATE` arriving over CDC,
 flowing through the journal and the MERGE, and it **rewrites history** — buckets that already reported
@@ -485,7 +513,7 @@ Attendees can deploy it themselves afterwards; it is not a lab step.
 | Destination table gets **no** rows at all | The producer was started with `--no-merge`, or the journal objects do not exist | Restart the producer without `--no-merge`, and confirm the journal and its stream exist. |
 | `SF_METADATA:offset_token` returns NULL | It holds a JSON string, not an object — faithful connector behaviour | `PARSE_JSON(SF_METADATA::STRING):offset_token` |
 | Telemetry rows take ~30 s to appear | `MAX_CLIENT_LAG` defaults to 30 s for Iceberg | Expected behaviour, not a fault. |
-| Producer: `ERR_CHANNEL_HAS_UNCOMMITTED_DATA` (HTTP 409) | A previous run's channel is still committing, and you reopened the same channel name | Wait ~30 s and start it again. Do not run two producers at once. |
+| Producer: `ERR_CHANNEL_HAS_UNCOMMITTED_DATA` (HTTP 409) | You stopped the producer and started it again within ~30 s, reopening a channel that was still committing | The lab never asks you to restart it — Part 5 changes modes through the control table instead. If you did stop it, wait ~30 s. Never run two producers at once. |
 | Producer: `externally-managed-environment` | macOS Homebrew Python, PEP 668 | Use the venv interpreter, not system Python. Ask Cortex Code to redo the venv step. |
 | Producer: authentication fails | Token expired, or `profile.json` has the wrong account | Tokens last 7 days. Re-mint in Snowsight and rebuild `profile.json`. |
 | Agent: `internal error (request_id: …)`, code 391920 | The Analyst tool has no `execution_environment`, so its generated SQL has no warehouse to run in | Add `"execution_environment": { "type": "warehouse", "warehouse": "HOL_WH" }` to the `tool_resources` entry and re-run `CREATE OR REPLACE AGENT`. |

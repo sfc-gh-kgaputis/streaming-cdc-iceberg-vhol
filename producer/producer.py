@@ -109,6 +109,52 @@ JOURNAL_TABLE = f"QUALITY_INSPECTIONS_JOURNAL_{JOURNAL_SERIES}_{JOURNAL_GENERATI
 TELEMETRY_DB, TELEMETRY_SCHEMA, TELEMETRY_TABLE = "MFG", "RAW", "STATION_TELEMETRY"
 JOURNAL_DB, JOURNAL_SCHEMA = "MFG", "RAW"
 
+# The simulator's control plane. The attendee changes the WORLD by writing here;
+# the pipeline never restarts. A real Openflow connector runs continuously and an
+# incident changes the character of the data at the source -- it does not bounce
+# the connector. Deliberately a standard table: it is operational metadata, not a
+# feed and not derived, so making it Iceberg would buy nothing and add one more
+# place for the ICEBERG_VERSION_DEFAULT session-schema trap to bite.
+CONTROL_TABLE = f"{JOURNAL_DB}.{JOURNAL_SCHEMA}.SIMULATOR_CONTROL"
+
+# Polled often enough to feel instant on stage. This costs no extra warehouse
+# time: the merge gate already runs a query every 60s against a warehouse whose
+# AUTO_SUSPEND is 60s, so HOL_WH is awake for as long as the producer runs anyway.
+CONTROL_POLL_SECONDS = 10.0
+
+# How long the re-inspection burst runs. Long enough to visibly clear the backlog
+# across a 5-minute bucket or two, short enough that the plant returns to a
+# believable steady state instead of a permanent 100% yield.
+REINSPECT_MINUTES = 3.0
+
+# Share of the failed backlog the inspectors overturn. Deliberately well under
+# 1.0: a corrected bucket should visibly improve, not become perfect.
+REINSPECT_FRACTION = 0.4
+
+
+def connect_sql(profile: dict[str, Any], query_tag: str | None = None) -> Any:
+    """A plain SQL connection, as the connector keeps alongside its stream.
+
+    Snowpipe Streaming does not use a warehouse; every SQL path here does. Kept in
+    one place because the merge, the DML fallback and the control poll all need
+    the same connection with the same role, warehouse and PAT auth.
+    """
+    import snowflake.connector as sc
+
+    params = {"QUERY_TAG": query_tag} if query_tag else None
+    return sc.connect(
+        account=profile["account"],
+        user=profile["user"],
+        password=profile["personal_access_token"],
+        role="ACCOUNTADMIN",
+        warehouse="HOL_WH",
+        database=JOURNAL_DB,
+        schema=JOURNAL_SCHEMA,
+        client_session_keep_alive=True,
+        session_parameters=params,
+    )
+
+
 # EVENT_TYPE literals. These are the connector's exact strings; the MERGE
 # branches on them.
 EV_INSERT = "IncrementalInsertRows"
@@ -232,6 +278,18 @@ class CdcSimulator:
         self.recent_fails: list[str] = []  # inspection_ids eligible for re-inspection
         self.recent_scans: list[str] = []  # inspection_ids eligible for voiding
         self.incident_until = None
+        # Runtime state, not a startup flag: the control table can turn this on and
+        # off while the producer keeps streaming. See control_loop().
+        #
+        # Time-boxed, exactly like the incident. Inspectors clear a backlog and then
+        # go back to their normal cadence; they do not re-check every failure for
+        # ever. Left latched on, the burst drains the backlog completely and yield
+        # pins at 100% with an empty DEFECT_COUNTS_5MIN, which is both unbelievable
+        # and less instructive than a visible jump followed by normal operation.
+        self.reinspect_until = (
+            utcnow() + timedelta(minutes=REINSPECT_MINUTES) if args.reinspect else None
+        )
+        self.reinspect_quota = 0
         self.counts: dict[str, int] = {"insert": 0, "update": 0, "delete": 0}
         # Logical WAL clock. batch = transaction, msg = position within it.
         self.batch = 0
@@ -248,6 +306,30 @@ class CdcSimulator:
     def start_incident(self, minutes: float) -> None:
         self.incident_until = utcnow() + timedelta(minutes=minutes)
         log(f"[cdc] PAINT defect rate -> {INCIDENT_DEFECT_RATE['PAINT']:.0%} for {minutes} min")
+
+    def reinspect_active(self) -> bool:
+        return self.reinspect_until is not None and utcnow() < self.reinspect_until
+
+    def start_reinspect(self, minutes: float) -> None:
+        self.reinspect_until = utcnow() + timedelta(minutes=minutes)
+        # Bounded at burst start: inspectors work through the backlog that exists
+        # now, and overturn the share of it that was a false reject.
+        self.reinspect_quota = max(1, int(len(self.recent_fails) * REINSPECT_FRACTION))
+        log(
+            f"[cdc] inspectors re-checking {self.reinspect_quota} failed units "
+            f"over the next {minutes:g} min"
+        )
+
+    def stop_reinspect(self) -> None:
+        if self.reinspect_until is not None:
+            self.reinspect_until = None
+            self.reinspect_quota = 0
+            log("[cdc] re-inspection back to normal cadence")
+
+    def stop_incident(self) -> None:
+        if self.incident_until is not None:
+            self.incident_until = None
+            log(f"[cdc] PAINT defect rate -> {BASE_DEFECT_RATE['PAINT']:.0%} (back to normal)")
 
     # -- generation ---------------------------------------------------------
     def new_scan(self) -> dict[str, Any]:
@@ -313,9 +395,15 @@ class CdcSimulator:
         # Rate is a fraction of FAILS, not of all scans -- you cannot overturn more
         # frames than actually failed. Expressing it against inserts (as an earlier
         # draft did) silently overturned every failure and pinned yield at 100%.
-        if self.args.reinspect:
-            # Burst mode: drain the backlog so yield visibly recovers.
-            n_upd = max(1, int(len(self.recent_fails) * 0.10))
+        if self.reinspect_active() and self.reinspect_quota > 0:
+            # Burst mode: overturn a bounded share of the backlog so yield visibly
+            # recovers WITHOUT reaching 100%. Some frames really are scrap, and a
+            # bucket that corrects to a perfect score is neither believable nor
+            # instructive -- it also empties DEFECT_COUNTS_5MIN, removing the
+            # evidence the agent needs. One per tick keeps the correction visible
+            # over ~20-30s rather than instant.
+            n_upd = 1
+            self.reinspect_quota -= 1
         else:
             n_upd = self._poisson_ish(fails_this_tick * self.args.update_rate)
 
@@ -372,6 +460,11 @@ class TelemetrySimulator:
             f"[telem] booth_humidity ramping {METRICS['booth_humidity'][1]:.0f} -> "
             f"{INCIDENT_HUMIDITY:.0f} over {ramp_seconds:.0f}s"
         )
+
+    def stop_drift(self) -> None:
+        if self.drift_start is not None:
+            self.drift_start = None
+            log(f"[telem] booth_humidity -> {METRICS['booth_humidity'][1]:.0f} (booth fixed)")
 
     def current_humidity(self) -> float:
         base = METRICS["booth_humidity"][1]
@@ -476,19 +569,7 @@ class JournalSink(CdcSink):
         self.merges = 0
         self.rows_merged = 0
         if merge:
-            import snowflake.connector as sc
-
-            self.cn = sc.connect(
-                account=profile["account"],
-                user=profile["user"],
-                password=profile["personal_access_token"],
-                role="ACCOUNTADMIN",
-                warehouse="HOL_WH",
-                database=JOURNAL_DB,
-                schema=JOURNAL_SCHEMA,
-                client_session_keep_alive=True,
-                session_parameters={"QUERY_TAG": MERGE_QUERY_TAG},
-            )
+            self.cn = connect_sql(profile, query_tag=MERGE_QUERY_TAG)
             self.lock = threading.Lock()
 
     def _send(self, ev: dict[str, Any], lsn: int) -> None:
@@ -565,18 +646,7 @@ class DirectDmlSink(CdcSink):
     """
 
     def __init__(self, profile: dict[str, Any]) -> None:
-        import snowflake.connector as sc
-
-        self.cn = sc.connect(
-            account=profile["account"],
-            user=profile["user"],
-            password=profile["personal_access_token"],
-            role="ACCOUNTADMIN",
-            warehouse="HOL_WH",
-            database=JOURNAL_DB,
-            schema=JOURNAL_SCHEMA,
-            client_session_keep_alive=True,
-        )
+        self.cn = connect_sql(profile)
         self.lock = threading.Lock()
         self.pending: list[Any] = []
 
@@ -713,6 +783,90 @@ class DryRunTelemetrySink:
 # ---------------------------------------------------------------------------
 # Threads
 # ---------------------------------------------------------------------------
+def arm_incident(cdc_sim: Any, telem_sim: Any, after: float, minutes: float) -> None:
+    """The two-phase cascade: cause leads effect.
+
+    Humidity starts drifting immediately; PAINT defects spike `after` seconds
+    later. That ordering is the whole point of the payoff question -- the agent has
+    to notice the cause preceded the effect -- so the delay is deliberate, not an
+    artefact of how fast the pipeline is.
+    """
+    if telem_sim:
+        telem_sim.start_drift(after)
+    if cdc_sim:
+
+        def arm() -> None:
+            if not _stop.wait(after):
+                cdc_sim.start_incident(minutes)
+
+        threading.Thread(target=arm, daemon=True, name="arm").start()
+
+
+def apply_mode(mode: str, cdc_sim: Any, telem_sim: Any, args: Any) -> None:
+    """Move the simulated world into `mode`. The pipeline is not touched."""
+    if mode == "INCIDENT":
+        log("[control] mode -> INCIDENT: booth humidity climbing, defects to follow")
+        arm_incident(cdc_sim, telem_sim, args.incident_after, args.incident_minutes)
+    elif mode == "REINSPECT":
+        log("[control] mode -> REINSPECT: booth fixed, inspectors re-checking failed units")
+        if telem_sim:
+            telem_sim.stop_drift()
+        if cdc_sim:
+            cdc_sim.stop_incident()
+            cdc_sim.start_reinspect(REINSPECT_MINUTES)
+    elif mode == "STEADY":
+        log("[control] mode -> STEADY")
+        if telem_sim:
+            telem_sim.stop_drift()
+        if cdc_sim:
+            cdc_sim.stop_incident()
+            cdc_sim.stop_reinspect()
+    else:
+        log(f"[control] unknown mode {mode!r} -- ignoring, staying as we are")
+
+
+def control_loop(profile: dict[str, Any], cdc_sim: Any, telem_sim: Any, args: Any) -> None:
+    """Poll the control table and move the world when it changes.
+
+    This is why the producer never restarts. A real Openflow connector runs
+    continuously; an incident changes the data at the SOURCE, it does not bounce
+    the connector. Restarting to change modes would also mean reopening a channel
+    name within seconds of closing it, which is exactly what raises
+    ERR_CHANNEL_HAS_UNCOMMITTED_DATA (HTTP 409).
+
+    A missing or unreadable control table is not fatal -- the producer keeps
+    streaming in whatever mode it started in, and says so once.
+    """
+    try:
+        cn = connect_sql(profile)
+    except Exception as exc:
+        log(f"[control] disabled, could not connect: {exc}")
+        return
+
+    current: str | None = None
+    try:
+        while not _stop.is_set():
+            if _stop.wait(CONTROL_POLL_SECONDS):
+                break
+            try:
+                cur = cn.cursor()
+                cur.execute(
+                    f"SELECT MODE FROM {CONTROL_TABLE} ORDER BY UPDATED_AT DESC LIMIT 1"
+                )
+                row = cur.fetchone()
+                cur.close()
+            except Exception as exc:
+                log(f"[control] read failed, staying in {current or 'startup'} mode: {exc}")
+                continue
+            mode = (row[0] if row and row[0] else "STEADY").strip().upper()
+            if mode == current:
+                continue
+            current = mode
+            apply_mode(mode, cdc_sim, telem_sim, args)
+    finally:
+        cn.close()
+
+
 def merge_loop(sink: JournalSink, gate_seconds: float) -> None:
     """The connector's merge control loop.
 
@@ -859,6 +1013,11 @@ def main() -> None:
         help="burst of re-inspections: watch yield RECOVER",
     )
     ap.add_argument(
+        "--no-control",
+        action="store_true",
+        help="ignore MFG.RAW.SIMULATOR_CONTROL; use only the flags given here",
+    )
+    ap.add_argument(
         "--duration",
         type=float,
         default=0.0,
@@ -948,17 +1107,18 @@ def main() -> None:
     for t in threads:
         t.start()
 
-    # The cascade: cause (humidity) leads effect (defects) by --incident-after.
+    # --incident / --reinspect still work for a presenter testing from a shell, but
+    # the lab drives both from the control table so the producer never restarts.
     if args.incident:
-        if telem_sim:
-            telem_sim.start_drift(args.incident_after)
-        if cdc_sim:
+        arm_incident(cdc_sim, telem_sim, args.incident_after, args.incident_minutes)
 
-            def arm() -> None:
-                if not _stop.wait(args.incident_after):
-                    cdc_sim.start_incident(args.incident_minutes)
-
-            threading.Thread(target=arm, daemon=True).start()
+    if not args.dry_run and not args.no_control:
+        threading.Thread(
+            target=control_loop,
+            args=(profile, cdc_sim, telem_sim, args),
+            daemon=True,
+            name="control",
+        ).start()
 
     try:
         if args.duration:
