@@ -24,8 +24,11 @@
 --  * TIME_SLICE() returns TIMESTAMP_NTZ(9). Iceberg v2 rejects scale 9. On an
 --    all-v3 chain a bare TIME_SLICE() is accepted, but the ::TIMESTAMP_NTZ(6)
 --    cast below is kept deliberately: it costs nothing and it keeps working if
---    a schema default is ever missed. CREATE DYNAMIC ICEBERG TABLE has no
---    version clause, so it can only inherit ICEBERG_VERSION_DEFAULT.
+--    a schema default is ever missed. A Dynamic Iceberg Table takes its format
+--    version from the schema it is created IN -- MFG.ANALYTICS here -- and
+--    CREATE DYNAMIC ICEBERG TABLE has no version clause, so that default is the
+--    only thing standing between this file and a v2 Gold layer. 02_preflight.sql
+--    check 4 is what proves it.
 --
 --  * MODE() is a hard CREATE error under change tracking, not a slow path:
 --    "Change tracking is not supported on queries containing the function 'MODE'".

@@ -10,8 +10,12 @@
 --
 -- READ THIS, IT IS NOT WHAT YOU EXPECT (measured 26 Aug 2026):
 --
---   EXTERNAL_VOLUME and CATALOG resolve from the schema that CONTAINS the new
---   table. ICEBERG_VERSION_DEFAULT resolves from the SESSION'S CURRENT SCHEMA.
+--   EXTERNAL_VOLUME and CATALOG always resolve from the schema that CONTAINS the
+--   new table. ICEBERG_VERSION_DEFAULT does not, and it resolves differently for
+--   the two CREATE forms:
+--
+--     CREATE ICEBERG TABLE          -> from the SESSION'S CURRENT SCHEMA
+--     CREATE DYNAMIC ICEBERG TABLE  -> from the TARGET SCHEMA
 --
 -- So `CREATE ICEBERG TABLE MFG.RAW.T (...)` run without `USE SCHEMA MFG.RAW`
 -- first gets the right volume and catalog but lands on **version 2**, even
@@ -21,13 +25,18 @@
 --
 -- A v2 table is created successfully; the damage shows up later as
 -- `Unsupported data type 'VARIANT'` or a rejected TIMESTAMP_NTZ(9) from
--- TIME_SLICE(), deep in the pipeline where the cause is invisible. And
--- CREATE DYNAMIC ICEBERG TABLE has no ICEBERG_VERSION clause at all, so for
--- the Dynamic Table layer there is no way to override it per statement.
+-- TIME_SLICE(), deep in the pipeline where the cause is invisible.
+--
+-- The Dynamic Tables in Part 3 are immune to the SESSION half of this -- they
+-- read the schema they are created in. But CREATE DYNAMIC ICEBERG TABLE has no
+-- ICEBERG_VERSION clause at all, so they have no per-statement override either:
+-- their format version is whatever MFG.ANALYTICS says and nothing else. That is
+-- why the defaults below are set on ANALYTICS too, and why 02_preflight.sql
+-- checks both schemas.
 --
 -- Hence three layers of defence:
---   1. USE SCHEMA before every Iceberg create   <- the actual fix
---   2. the database-level default, so any schema inside MFG inherits v3
+--   1. USE SCHEMA before every plain Iceberg create  <- fixes the session half
+--   2. the defaults on BOTH schemas                  <- fixes the target half
 --   3. an explicit ICEBERG_VERSION = 3 wherever the syntax allows one
 -- =====================================================================
 
@@ -37,9 +46,8 @@ CREATE DATABASE IF NOT EXISTS MFG;
 CREATE SCHEMA   IF NOT EXISTS MFG.RAW;        -- both landing zones: CDC destination, its journal, telemetry
 CREATE SCHEMA   IF NOT EXISTS MFG.ANALYTICS;  -- everything derived: the Dynamic Tables, semantic view, agent
 
--- Layer 2: database level. Any session whose current schema is anywhere inside
--- MFG now inherits v3, which covers the case where you are in MFG.ANALYTICS and
--- create something in MFG.RAW.
+-- Belt and braces at database level, so any session whose current schema is
+-- anywhere inside MFG resolves v3 for a plain Iceberg create.
 ALTER DATABASE MFG SET ICEBERG_VERSION_DEFAULT = 3;
 
 -- Storage defaults. Do this BEFORE creating any table.
@@ -47,9 +55,11 @@ ALTER SCHEMA MFG.RAW SET EXTERNAL_VOLUME = 'SNOWFLAKE_MANAGED';
 ALTER SCHEMA MFG.RAW SET CATALOG = 'SNOWFLAKE';
 ALTER SCHEMA MFG.RAW SET ICEBERG_VERSION_DEFAULT = 3;
 
--- ANALYTICS needs these too, and it is easy to think it does not: every object
--- in it is a Dynamic ICEBERG Table, and CREATE DYNAMIC ICEBERG TABLE has no
--- ICEBERG_VERSION clause at all. It inherits or it is wrong.
+-- ANALYTICS needs these too, and it is easy to think it does not, because you
+-- never create a plain Iceberg table there. Every object in it is a Dynamic
+-- ICEBERG Table, those read the TARGET schema's version default, and
+-- CREATE DYNAMIC ICEBERG TABLE has no ICEBERG_VERSION clause to override with.
+-- This line is the only thing deciding whether the Gold layer is v3.
 ALTER SCHEMA MFG.ANALYTICS SET EXTERNAL_VOLUME = 'SNOWFLAKE_MANAGED';
 ALTER SCHEMA MFG.ANALYTICS SET CATALOG = 'SNOWFLAKE';
 ALTER SCHEMA MFG.ANALYTICS SET ICEBERG_VERSION_DEFAULT = 3;

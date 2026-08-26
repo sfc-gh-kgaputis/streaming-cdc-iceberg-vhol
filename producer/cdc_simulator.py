@@ -6,6 +6,19 @@ matter: it creates its own target objects, appends change events to a journal ov
 Snowpipe Streaming, and applies that journal with a MERGE it issues itself on a
 CRON eligibility gate. There is no Snowflake TASK anywhere, because the real
 connector does not create one.
+
+Where to look, if you are reading rather than running:
+
+    MERGE_SQL           the statement the connector applies the journal with
+    *_DDL + ensure_objects()   the three objects it creates for itself
+    journal_event()     the connector's wire format -- PRIMARY_KEY__ vs PAYLOAD__
+    JournalSink         the faithful path: streaming append + the merge processor
+    merge_loop()        the CRON gate, and where the CDC latency really comes from
+
+Those five are the lab. The rest is supporting cast: `CdcSimulator` shapes the
+plant's behaviour, `DryRunCdcSink` serves `--dry-run` in Setup D, and
+`DirectDmlSink` is a recovery path for `--cdc-mode direct` that the lab does not
+use -- it skips the journal entirely, so it teaches none of the above.
 """
 
 from __future__ import annotations

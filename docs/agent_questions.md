@@ -37,8 +37,8 @@ which is both true and useless — the kind of answer that looks like a working 
 
 > Why did PAINT yield drop?
 
-Ask this **during Part 5**, after the incident has propagated — roughly 3–4 minutes after you restart
-the producer with `--incident`.
+Ask this **during Part 5**, after the incident has propagated — roughly 3–4 minutes after you set the
+simulator control mode to `INCIDENT`. The producer keeps running throughout; you never restart it.
 
 **Expect:** the agent connects the **booth humidity rise** to the `PAINT_RUN` defects, and gets the
 **order** right: humidity climbed first, defects followed. It should also note that WELD and ASSEMBLY

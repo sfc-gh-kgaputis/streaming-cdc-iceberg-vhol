@@ -56,11 +56,16 @@ ALTER SCHEMA MFG.RAW SET ICEBERG_VERSION_DEFAULT = 3;
 ```
 
 **HARD RULE: issue `USE SCHEMA MFG.RAW;` (or `MFG.ANALYTICS`) immediately before every
-Iceberg `CREATE`.** This is not stylistic. Measured 26 Aug 2026:
+Iceberg `CREATE`.** This is not stylistic. Measured 26 Aug 2026, re-measured with a
+controlled single-session test 26 Aug:
 
-- `EXTERNAL_VOLUME` and `CATALOG` resolve from the schema that **contains** the new
-  table, as expected.
-- `ICEBERG_VERSION_DEFAULT` resolves from the **session's current schema**.
+- `EXTERNAL_VOLUME` and `CATALOG` always resolve from the schema that **contains** the
+  new table, for both `CREATE` forms.
+- `ICEBERG_VERSION_DEFAULT` resolves from **different places** depending on the form:
+  - `CREATE ICEBERG TABLE` — from the **session's current schema**.
+  - `CREATE DYNAMIC ICEBERG TABLE` — from the **target schema**. Confirmed by creating
+    one into a schema with no v3 default, from a v3 session and a v3 source: it landed
+    v2. Neither the session nor the source decides.
 
 So `CREATE ICEBERG TABLE MFG.RAW.T (...)` issued without `USE SCHEMA MFG.RAW` first
 gets the correct volume and catalog but silently lands on **version 2** — while
@@ -69,10 +74,16 @@ The parameter is set, reported, and ignored. **Never cite `SHOW PARAMETERS` as p
 that v3 is working**; only a created table's `iceberg_table_format_version` counts.
 
 Consequences of landing on v2, all of which surface far from the cause:
-`VARIANT` columns are rejected outright; `TIME_SLICE()`'s `TIMESTAMP_NTZ(9)` is
-rejected; and **`CREATE DYNAMIC ICEBERG TABLE` has no `ICEBERG_VERSION` clause at
-all**, so for the Dynamic Table layer there is no per-statement override — it inherits
-or it is wrong.
+`VARIANT` columns are rejected outright, and `TIME_SLICE()`'s `TIMESTAMP_NTZ(9)` is
+rejected.
+
+The Dynamic Table layer is **not** exposed to the session-schema trap — but it is
+wholly dependent on `MFG.ANALYTICS` carrying the version default, because
+**`CREATE DYNAMIC ICEBERG TABLE` has no `ICEBERG_VERSION` clause at all** and so has no
+per-statement override. Setting the three defaults on `MFG.ANALYTICS` is therefore not
+optional, even though no plain Iceberg table is ever created there. Keep the
+`USE SCHEMA` before Dynamic Table creates anyway: it costs nothing, it matches the
+answer key, and it models the discipline the lab teaches.
 
 There is no in-place v2 → v3 upgrade. A table that came out v2 must be recreated.
 Always run the preflight (`solutions/02_preflight.sql`) after creating tables, and
@@ -113,7 +124,8 @@ preflight check. Snowpipe Streaming auto-creates a default pipe named
 
 ### The Dynamic Iceberg Table DAG — all four INCREMENTAL, TARGET_LAG '1 minute'
 
-Emit the DDL from `references/object_model.md` verbatim. Shapes:
+Emit the DDL from `solutions/04_dynamic_tables.sql` verbatim — see **Emitting DDL**
+below. Shapes:
 
 1. **`INSPECTIONS_ACTIVE`** — `FROM QUALITY_INSPECTIONS WHERE NOT _SNOWFLAKE_DELETED`,
    passes columns through, adds `IS_SCRAP = IFF(STATUS='FAIL',1,0)`.
@@ -133,12 +145,12 @@ is a paint-booth metric. Say so if the attendee asks; do not "fix" it.
 
 **The attendee never creates this, and neither do you.** `producer/cdc_simulator.py`
 creates the journal, its stream and the destination table on first run, with every
-storage property stated explicitly. The DDL below is reference only, for reading and
-for the Part 2 inspection queries.
-
+storage property stated explicitly. Its `JOURNAL_DDL`, `STREAM_DDL` and
+`DESTINATION_DDL` constants are the only live copies of that DDL — read them there if
+someone explicitly asks to see it. Do not reproduce it from memory.
 
 Two objects: `MFG.RAW.QUALITY_INSPECTIONS_JOURNAL_1787700000_1` and its `APPEND_ONLY`
-stream `..._STREAM`. Emit both verbatim from `references/object_model.md`.
+stream `..._STREAM`.
 
 **There is no task, and you must not create one.** The Openflow connector does not
 create a Snowflake `TASK` — verified against the connector source. Its merge processor
@@ -180,18 +192,64 @@ This is faithful, not a bug — make it a teaching moment rather than fixing it.
 
 ### MFG.ANALYTICS.PLANT_FLOOR_SV — semantic view
 
-Build from the verbatim DDL in `references/object_model.md`. Change only synonyms
+Emit the DDL from `solutions/05_semantic_view.sql` verbatim. Change only synonyms
 and comments. Three logical tables: `yield`, `defects`, `stations`.
+
+Four syntax rules, all of which have been generated wrong before. If a `CREATE`
+fails, re-emit the file's DDL verbatim rather than improvising the grammar:
+
+1. Clause order is fixed: `TABLES` → `RELATIONSHIPS` → `FACTS` → `DIMENSIONS` → `METRICS`
+2. Tables use `AS`, never `=`
+3. Synonyms use `WITH SYNONYMS = (...)`, never a bare `SYNONYMS = (...)`
+4. Metrics are alias-qualified and defined with `AS` —
+   `yield.total_units AS SUM(yield.units)`, not `total_units = SUM(units)`
 
 ### MFG.ANALYTICS.CASCADE_PLANT_ANALYST — Cortex Agent
 
-Build from the verbatim spec in `references/agent_spec.md`.
+Emit the spec from `solutions/06_agent.sql` verbatim. Four rules:
+
+- **Dollar-quote with `$$`, never a named tag** like `$spec$` — Cortex Code's SQL
+  execution path rejects named tags with `unexpected '$spec'`. The spec JSON never
+  contains `$$`, so plain `$$` is safe.
+- **`models.orchestration` must be `"auto"`.** Agent orchestration has a narrower,
+  account-specific allowed-models list than Cortex `COMPLETE`, so a pinned model can
+  fail with *"not an allowed model for Agent"*. If the attendee wants a specific one,
+  pin it afterwards in Snowsight under **Configuration → Model**; `claude-sonnet-4-5`
+  is a good pick where offered — mind the id, it is `claude-sonnet-4-5`, not
+  `claude-4-sonnet`.
+- **Keep `execution_environment` in `tool_resources`** — see D17 below.
+- **To change the agent, re-run the whole `CREATE OR REPLACE AGENT` statement.** Do not
+  attempt a workspace-file edit/redeploy path; this agent comes from SQL and is not
+  tracked in a workspace, so that fails with *"Could not resolve workspace file …
+  cortex-project.yaml"*.
+
+The three questions to send the attendee to, with what each one proves and how it can
+go wrong, are in `docs/agent_questions.md`. Point them at that file rather than
+retyping the questions.
+
+## Emitting DDL from `solutions/`
+
+Every object's verbatim DDL lives in the matching `solutions/*.sql` file, and that file
+is the single source of truth. There is no second copy anywhere in this skill, so there
+is nothing that can drift out of sync. Read the file, then:
+
+- Emit **only its `CREATE` statements**, plus the `USE ROLE` / `USE WAREHOUSE` /
+  `USE SCHEMA` lines above them. The `USE SCHEMA` is load-bearing, not decoration —
+  see the Iceberg-defaults section above.
+- **Never emit the checkpoint `SELECT`s** as part of a build step. Run them afterwards,
+  as that step's Checkpoint, and report the result.
+- **Never emit a commented-out block.** Two exist deliberately: the reference MERGE in
+  `03_journal_inspection.sql` (the producer issues that itself) and the `MODE()`
+  negative example in `04_dynamic_tables.sql` (that is Optional B, and only if asked).
+- **Generate the DDL — do not tell the attendee to run the file instead.** Building it
+  by prompting is the point of the lab. `solutions/` is theirs to fall back on if they
+  choose; it is not your shortcut.
 
 ## Measured constraints — do not rediscover these
 
 | # | Constraint |
 |---|---|
-| 0 | **`ICEBERG_VERSION_DEFAULT` resolves from the session's current schema, not the target table's schema.** `EXTERNAL_VOLUME` and `CATALOG` resolve from the target schema. Always `USE SCHEMA` first. `SHOW PARAMETERS` is not a valid check — only a created table's `iceberg_table_format_version` is. |
+| 0 | **`ICEBERG_VERSION_DEFAULT` resolves from the session's current schema for `CREATE ICEBERG TABLE`, but from the target schema for `CREATE DYNAMIC ICEBERG TABLE`.** `EXTERNAL_VOLUME` and `CATALOG` always use the target schema. Always `USE SCHEMA` first. `SHOW PARAMETERS` is not a valid check — only a created table's `iceberg_table_format_version` is. |
 | 1 | `TIME_SLICE()` returns `TIMESTAMP_NTZ(9)`, rejected by Iceberg **v2**, accepted on v3. Keep the `::TIMESTAMP_NTZ(6)` cast anyway — it is free insurance if the version default did not take. |
 | 2 | **`MODE()` is a hard `CREATE` error** under change tracking: *"Change tracking is not supported on queries containing the function 'MODE'"*. Never put it in a Dynamic Table. Count at defect grain and rank at read time. |
 | 3 | `OBJECT` / `OBJECT_AGG` output is rejected by Iceberg on **v2 and v3 alike**. |
@@ -286,13 +344,10 @@ step numbers here, when you talk to them.
    Checkpoint Y. Then show refresh history, and if asked, demonstrate the `MODE()`
    failure as a real teaching moment.
 
-7. **Semantic view + agent — Part 4** — emit both verbatim from `references/`. For the semantic
-   view follow its syntax rules exactly (`AS` not `=`, `WITH SYNONYMS`, alias-qualified
-   metrics); if a create fails, re-emit the verbatim DDL rather than improvising the
-   grammar. For the agent, dollar-quote with `$$` (never a named tag like `$spec$`) and
-   set `models.orchestration` to `"auto"`. After creating it, tell the attendee to chat
-   with it in **Snowsight → AI & ML → Agents → Cascade Plant Analyst**, on the detail
-   page's chat panel — not here. They do NOT need to Publish.
+7. **Semantic view + agent — Part 4** — emit both verbatim from `solutions/`, following
+   their sections above. After creating the agent, tell the attendee to chat with it in
+   **Snowsight → AI & ML → Agents → Cascade Plant Analyst**, on the detail page's chat
+   panel — not here. They do NOT need to Publish.
 
 8. **The incident — Part 5** — **do NOT restart the producer.** It has been running since
    step 3 and it stays running for the rest of the lab. Change the *world* instead, by
@@ -415,10 +470,15 @@ with `SHOW AGENTS LIKE 'CASCADE_PLANT_ANALYST' IN SCHEMA MFG.ANALYTICS;`.
 
 ## References
 
-- `references/object_model.md` — verbatim DDL for the journal, the DAG, and the
-  semantic view.
-- `references/agent_spec.md` — verbatim agent spec and the three questions.
+This skill carries no copies of anything. Every fact has exactly one home:
+
+- `solutions/*.sql` — verbatim DDL for every object, one file per Part. Read the file
+  for the Part you are on. See **Emitting DDL from `solutions/`** above.
 - `solutions/progress.sql` — the "where am I" query. Run it verbatim.
+- `producer/cdc_simulator.py` — the connector's own DDL (`DESTINATION_DDL`,
+  `JOURNAL_DDL`, `STREAM_DDL`) and the MERGE it issues (`MERGE_SQL`).
+- `docs/agent_questions.md` — the three agent questions, what each proves, and the
+  ways each can go wrong.
 
 ## Things in this repo that are NOT attendee build steps
 

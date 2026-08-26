@@ -38,9 +38,9 @@ frames and see yield **go back up**, including for time buckets that already rep
 
 Not a feature tour — these are the things that change how you build:
 
-- Why `ICEBERG_VERSION_DEFAULT` resolves from your **session's** current schema while
-  `EXTERNAL_VOLUME` and `CATALOG` resolve from the target schema, and why that forces a `USE SCHEMA`
-  before every Iceberg `CREATE`.
+- Why `ICEBERG_VERSION_DEFAULT` resolves from your **session's** schema for a plain `CREATE ICEBERG
+  TABLE` but from the **target** schema for a Dynamic one, while `EXTERNAL_VOLUME` and `CATALOG` always
+  use the target — and why that forces a `USE SCHEMA` before every Iceberg `CREATE`.
 - Why a real CDC connector writes a **journal** and applies it on a gate, rather than writing your
   destination table directly — and where the latency in that design actually lives.
 - What a soft delete costs you downstream, and why one missing predicate silently corrupts a yield
@@ -54,6 +54,32 @@ Not a feature tour — these are the things that change how you build:
 ## The architecture
 
 ![Two feeds land in Snowflake-managed Apache Iceberg v3 tables. A simulated Openflow Postgres CDC connector appends change events to a journal table over Snowpipe Streaming, and an append-only stream feeds a MERGE that maintains the QUALITY_INSPECTIONS destination table with soft deletes. In parallel, station telemetry streams directly into the STATION_TELEMETRY Iceberg table. Four Dynamic Iceberg Tables refine both feeds incrementally: INSPECTIONS_ACTIVE filters soft-deleted rows and STATION_HEALTH rolls up telemetry, then YIELD_BY_LINE_5MIN joins scans to telemetry per five-minute bucket and DEFECT_COUNTS_5MIN counts defects. A semantic view sits over the gold tables, a Cortex Agent answers questions over the semantic view, and PyIceberg reads the same gold tables from outside Snowflake through the Horizon Catalog.](docs/architecture.svg)
+
+## What is real, and what is simulated
+
+**Only the CDC connector is simulated.** Everything downstream — the Iceberg tables, the journal, the
+append-only stream, the MERGE, the Dynamic Tables, the semantic view, the agent — is exactly what you
+would build for real.
+
+Three reasons it is simulated:
+
+- **Openflow is not typically available on trial accounts**, and this lab runs entirely in yours.
+- Standing up a source Postgres database and a connector runtime is an infrastructure exercise, not a
+  data-engineering one. It does not fit in 90 minutes and it is not what you came for.
+- What matters is what lands *in* Snowflake and what you build on top of it.
+
+So the simulator is faithful where that matters. It creates its own destination table, journal and
+stream, as the real connector does. It writes the connector's journal schema, its three `EVENT_TYPE`
+shapes, and its soft deletes. It issues the MERGE itself on the connector's CRON eligibility gate —
+there is no Snowflake task, because the real connector does not create one — and it stamps each merge
+with the connector's `QUERY_TAG` so you can audit it the way you would audit production.
+
+**Storage is Snowflake-managed Iceberg** (`EXTERNAL_VOLUME = 'SNOWFLAKE_MANAGED'`). A trial account has
+no connected cloud storage, so an external volume is not an option — but this is also a good default in
+its own right: Snowflake handles the bucket, the catalog and file maintenance, and the tables are still
+open Iceberg that any engine can read. Optional A proves that from your laptop. Format version **3** is
+required rather than preferred: the journal's `SF_METADATA` column is a `VARIANT`, and v2 rejects
+`VARIANT` outright.
 
 ## What you need
 
@@ -257,41 +283,38 @@ Two schemas, and the split is the shape of the pipeline rather than the shape of
 By the end you will be able to read the pipeline off a fully-qualified name. A table in `RAW` arrived
 from outside; a table in `ANALYTICS` was computed for you.
 
-Watch for a `USE SCHEMA` before each Iceberg `CREATE`. That is not cosmetic, and it is the least
-obvious thing in this lab:
+Watch for a `USE SCHEMA` before each Iceberg `CREATE`. That is not cosmetic:
 
-**`ICEBERG_VERSION_DEFAULT` resolves from your session's current schema, not from the schema holding
-the table you are creating.** `EXTERNAL_VOLUME` and `CATALOG` resolve the way you would expect, from
-the target schema. So a `CREATE ICEBERG TABLE MFG.RAW.T` issued while your session is somewhere else
-gets the right storage and silently lands on Iceberg **v2** — while `SHOW PARAMETERS` keeps reporting
-`3`. A v2 table then rejects `VARIANT` and rejects the `TIMESTAMP_NTZ(9)` that `TIME_SLICE()`
-produces, far from the actual cause. `CREATE DYNAMIC ICEBERG TABLE` has no version clause at all, so
-for the Dynamic Tables there is no way to override it per statement. And Iceberg has no in-place
-v2 → v3 upgrade — a table that lands wrong has to be recreated.
+**`ICEBERG_VERSION_DEFAULT` resolves from two different places depending on which `CREATE` you write,
+and this lab uses both.** `EXTERNAL_VOLUME` and `CATALOG` always resolve from the target schema, as you
+would expect. The version does not:
+
+| Statement | Version comes from |
+|---|---|
+| `CREATE ICEBERG TABLE` | your **session's current schema** |
+| `CREATE DYNAMIC ICEBERG TABLE` | the **target schema** |
+
+So a `CREATE ICEBERG TABLE MFG.RAW.T` issued while your session is somewhere else gets the right storage
+and silently lands on Iceberg **v2** — while `SHOW PARAMETERS` keeps reporting `3`. A v2 table then
+rejects `VARIANT` and rejects the `TIMESTAMP_NTZ(9)` that `TIME_SLICE()` produces, far from the actual
+cause. And Iceberg has no in-place v2 → v3 upgrade — a table that lands wrong has to be recreated. That
+is why there is a `USE SCHEMA` above the telemetry table, and it is the least obvious thing in this lab.
+
+The Dynamic Tables in Part 3 are **immune** to that — they read the schema they are created in, and
+`CREATE DYNAMIC ICEBERG TABLE` has no version clause because it does not need one. But that cuts both
+ways: their format version depends *entirely* on `MFG.ANALYTICS` having the default set, with nothing
+you can override per statement if it does not. That is precisely what the preflight is about to check,
+and why it checks both schemas rather than just the one you have built in.
 
 Notice what the telemetry table's DDL does **not** contain: no `CATALOG`, no `EXTERNAL_VOLUME`, no
-version. That is the point. It inherits.
+version. That is the point. It inherits all three, and the preflight is about to prove it did.
 
 **Checkpoint:** `SHOW ICEBERG TABLES IN DATABASE MFG` lists `STATION_TELEMETRY`, and
 `SHOW TABLES LIKE 'QUALITY_INSPECTIONS' IN SCHEMA MFG.RAW` lists a table that is **not** Iceberg. That
 asymmetry is deliberate — the CDC destination is a standard table because it is rewritten constantly.
 
-You created **one** data table just now. The connector will create three more for itself when you
-start it in Part 2 — the CDC destination, the change journal and its stream. That split is not
-arbitrary, and it is worth thirty seconds:
-
-| Ingestion path | Who creates the target table |
-|---|---|
-| **Openflow CDC connector** | The **connector**. It "creates the schemas and destination tables matching the source tables" — you point it at a source and the objects appear. |
-| **Snowpipe Streaming client** | **You do.** The SDK auto-creates the *pipe*, never the table. Creating it is step 2 of Snowflake's own streaming quickstart. |
-
-So a managed connector provisions its own destination; a streaming application does not. If you take
-one operational fact home from Part 1, take that one — it decides who owns your schema.
-
-It is also why `STATION_TELEMETRY` above carries **no** `CATALOG`, `EXTERNAL_VOLUME` or
-`ICEBERG_VERSION` clause. It inherits all three, and the preflight is about to prove it did. The
-connector's own DDL does the opposite and states every property explicitly, because it should be
-immune to the trap rather than demonstrating it.
+You created **one** data table just now. The connector creates three more for itself when you start it
+in Part 2 — the CDC destination, the change journal and its stream. Part 2 shows you that happening.
 
 Now verify everything, before building anything on top:
 
@@ -325,8 +348,19 @@ targets and says so:
 [connector] journal stream ready
 ```
 
-That is the division of labour the lab is teaching. You built the environment and the telemetry table;
-the connector builds the CDC objects. If those three lines are missing, it found them already there.
+That is the division of labour the lab is teaching, and it is not arbitrary. If those three lines are
+missing, the connector found the objects already there.
+
+| Ingestion path | Who creates the target table |
+|---|---|
+| **Openflow CDC connector** | The **connector**. It "creates the schemas and destination tables matching the source tables" — you point it at a source and the objects appear. |
+| **Snowpipe Streaming client** | **You do.** The SDK auto-creates the *pipe*, never the table. Creating it is step 2 of Snowflake's own streaming quickstart. |
+
+So a managed connector provisions its own destination; a streaming application does not. If you take
+one operational fact home from this lab, take that one — it decides who owns your schema. It is also
+why you wrote `STATION_TELEMETRY`'s DDL with no storage clauses and the connector states every property
+explicitly: the telemetry table is where inheritance is taught, so the connector's own DDL should be
+immune to the trap rather than demonstrating it.
 
 **You start this once and leave it running for the rest of the lab.** You will never stop it, and
 you will never restart it. That is the point: a streaming pipeline is something you turn on and
@@ -350,7 +384,7 @@ Two sources doing two different jobs:
   duplicate scans.
 - **Telemetry** → `STATION_TELEMETRY`, also Snowpipe Streaming, at ~60 rows/sec.
 
-Only the *connector* is simulated. Everything downstream is exactly what you would build for real.
+Only the *connector* is simulated — see [What is real, and what is simulated](#what-is-real-and-what-is-simulated).
 
 **In steady state:** telemetry climbs fastest by far — roughly 900 rows per 15 seconds against a
 couple of scans per second — so expect telemetry in the tens of thousands while the journal is in the
@@ -609,7 +643,9 @@ Core lab done. Both of these stand alone — do either, both, or neither.
 
 The claim this lab makes is that your data is in **open** Iceberg, governed by Snowflake but not
 locked inside it. This proves it. PyIceberg reads the Gold Dynamic Table straight from object storage
-through the Horizon Catalog, using vended credentials — no Snowflake warehouse involved in the read.
+through the Horizon Catalog, using vended credentials — no Snowflake warehouse computes the scan. It is
+not free, though: Horizon catalog access is billed as external-engine access, even when the reader is
+another Snowflake account.
 
 ```bash
 pip install -r external/requirements.txt
@@ -649,12 +685,12 @@ found the only way anyone finds these.
 |---|---|---|
 | `raw_iceberg_ok` or `analytics_iceberg_ok` is FALSE, or an object reports v2 | Your session's current schema was not one that resolves `ICEBERG_VERSION_DEFAULT = 3` when the table was created | Re-run `01_environment.sql` — it sets the database-level default and issues `USE SCHEMA` before each create. Then **recreate** any v2 table: Iceberg has no in-place v2 → v3 upgrade. |
 | `Unsupported data type 'VARIANT' for iceberg tables` | Same cause — the table resolved to v2 | Same fix. This is the error the journal throws, since `SF_METADATA` is `VARIANT`. |
-| `SHOW PARAMETERS` says 3 but tables come out v2 | Not a contradiction. That parameter is reported per schema but applied per *session* schema | `USE SCHEMA MFG.RAW;` immediately before the `CREATE`. Never trust `SHOW PARAMETERS` as proof. |
+| `SHOW PARAMETERS` says 3 but a table comes out v2 | Not a contradiction. For a plain `CREATE ICEBERG TABLE` the version is applied from the *session's* schema, whatever the target schema reports | `USE SCHEMA MFG.RAW;` immediately before the `CREATE`. Never trust `SHOW PARAMETERS` as proof — only a created table's `iceberg_table_format_version` counts. |
 | `cortex_ok` is FALSE | `CORTEX_ENABLED_CROSS_REGION` still `DISABLED` | Re-run that `ALTER ACCOUNT` from Setup B as ACCOUNTADMIN in Snowsight. |
-| Rejected `TIMESTAMP_NTZ(9)` from `TIME_SLICE()` | The Dynamic Table landed on v2, and it has no version clause to override | Fix the session-schema issue above, then recreate the Dynamic Table. |
+| Rejected `TIMESTAMP_NTZ(9)` from `TIME_SLICE()` | The Dynamic Table landed on v2, because `MFG.ANALYTICS`'s own `ICEBERG_VERSION_DEFAULT` was not 3 when it was created — a Dynamic Table reads the target schema and has no version clause to override with | Set the three defaults on `MFG.ANALYTICS` (`01_environment.sql` does), confirm with `analytics_iceberg_ok`, then recreate the Dynamic Table. |
 | `refresh_mode` comes back `FULL` | Something in the query blocks incremental refresh | Read `refresh_mode_reason`; it names the cause. `APPROX_PERCENTILE` is a common one. |
 | `Change tracking is not supported ... 'MODE'` | `MODE()` in a Dynamic Table | Expected — that is Optional B. Count at defect grain, rank at read time. |
-| Destination table stays behind the journal | That is the merge gate, by design | Check `QUERY_HISTORY` for the connector's `QUERY_TAG`. Merges fire at second :00 each minute. Lower `--merge-gate-seconds` to shrink the gap. |
+| Destination table stays behind the journal | That is the merge gate, by design | Check `QUERY_HISTORY` for the connector's `QUERY_TAG`. Merges fire at second :00 each minute. Nothing to fix. |
 | Destination table gets **no** rows at all | The producer was started with `--no-merge`, or the journal objects do not exist | Restart the producer without `--no-merge`, and confirm the journal and its stream exist. |
 | `SF_METADATA:offset_token` returns NULL | It holds a JSON string, not an object — faithful connector behaviour | `PARSE_JSON(SF_METADATA::STRING):offset_token` |
 | Telemetry rows take ~30 s to appear | `MAX_CLIENT_LAG` defaults to 30 s for Iceberg | Expected behaviour, not a fault. |
@@ -712,9 +748,10 @@ using them means stopping the producer, which is the one thing this design avoid
 # How the skill knows all this
 
 `.snowflake/cortex/skills/coco-iceberg-cdc-vhol/` holds a Cortex Code **skill**: the object model, the
-measured Iceberg constraints, the checkpoint queries, and verbatim DDL for the trickier objects.
-Cortex Code loads it automatically when you open this folder, which is why a one-line prompt produces
-exactly the right table.
+measured Iceberg constraints, the checkpoints, and the rules for building each layer. Cortex Code loads
+it automatically when you open this folder, which is why a one-line prompt produces exactly the right
+table. It keeps no copy of the DDL — it points at `solutions/`, so there is only ever one version of
+any statement.
 
 Open `SKILL.md` and read it. Writing one for your own stack is the most transferable thing you will
 take away from this lab — it is how you stop re-explaining your conventions to an agent on every task.

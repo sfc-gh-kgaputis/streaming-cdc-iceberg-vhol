@@ -7,11 +7,11 @@
 --
 -- Note what this file does NOT do: check SHOW PARAMETERS. A schema can report
 -- ICEBERG_VERSION_DEFAULT = 3 at SCHEMA level and still produce v2 tables,
--- because that parameter resolves from the session's current schema rather
--- than from the schema holding the new table. SHOW PARAMETERS is therefore
--- not evidence. The only trustworthy check is the format version of a table
--- you actually created -- which is what checks 3 and 4 do, in both schemas,
--- because passing in one proves nothing about the other.
+-- because for a plain CREATE ICEBERG TABLE that parameter resolves from the
+-- session's current schema rather than from the schema holding the new table.
+-- SHOW PARAMETERS is therefore not evidence. The only trustworthy check is the
+-- format version of a table you actually created -- which is what checks 3 and 4
+-- do, in both schemas, because passing in one proves nothing about the other.
 -- =====================================================================
 
 USE ROLE ACCOUNTADMIN;
@@ -46,12 +46,14 @@ SHOW ICEBERG TABLES LIKE '_PREFLIGHT' IN SCHEMA MFG.RAW
 
 DROP TABLE MFG.RAW._PREFLIGHT;
 
--- 4. Same again in MFG.ANALYTICS. Easy to think this one does not matter,
---    because you create no plain Iceberg table there -- but every Dynamic Table
---    you are about to build in it is a Dynamic ICEBERG Table, and
---    CREATE DYNAMIC ICEBERG TABLE has no ICEBERG_VERSION clause to override
---    with. If this check is FALSE, the whole Gold layer lands on v2 in Part 3
---    and TIME_SLICE()'s TIMESTAMP_NTZ(9) is rejected with no hint of the cause.
+-- 4. Same again in MFG.ANALYTICS. This is the one people skip, because you
+--    create no plain Iceberg table there -- but every Dynamic Table you are about
+--    to build in it is a Dynamic ICEBERG Table, and those take their format
+--    version from the TARGET schema. CREATE DYNAMIC ICEBERG TABLE has no
+--    ICEBERG_VERSION clause to override with, so this schema's default is the
+--    ONLY thing deciding whether the Gold layer is v3. If this check is FALSE,
+--    the whole Gold layer lands on v2 in Part 3 and TIME_SLICE()'s
+--    TIMESTAMP_NTZ(9) is rejected with no hint of the cause.
 USE SCHEMA MFG.ANALYTICS;
 CREATE OR REPLACE ICEBERG TABLE MFG.ANALYTICS._PREFLIGHT (N NUMBER(38,0), M VARIANT);
 

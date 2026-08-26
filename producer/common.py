@@ -201,6 +201,3 @@ def connect_sql(profile: dict[str, Any], query_tag: str | None = None) -> Any:
         client_session_keep_alive=True,
         session_parameters=params,
     )
-
-
-# EVENT_TYPE literals. These are the connector's exact strings; the MERGE

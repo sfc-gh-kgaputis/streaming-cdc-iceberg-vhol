@@ -20,16 +20,19 @@ USE WAREHOUSE HOL_WH;
 USE SCHEMA MFG.RAW;
 
 -- =====================================================================
--- THE MERGE -- for reference, and to run by hand
+-- THE MERGE -- what it does, and where to read it
 -- =====================================================================
 -- The producer issues this statement on its CRON gate, exactly as the connector
 -- does, with the connector's QUERY_TAG set so you can find it in QUERY_HISTORY.
--- You do not need to run it yourself; it is here so you can read it, and so you
--- can apply a batch on demand if you want to see the effect immediately.
+--
+-- The statement itself lives in producer/cdc_simulator.py, as MERGE_SQL. Read it
+-- there rather than here: that is the copy that actually runs, so it cannot be
+-- out of date.
 --
 -- Invariants it preserves, all of which matter:
 --   1. Read the STREAM, not the journal table. Consuming the stream inside a
---      committed statement is what advances the offset.
+--      committed statement is what advances the offset. That is what makes it
+--      exactly-once.
 --   2. Dedup to ONE row per replication key, ordered by the LSN tuple DESC.
 --      Without this, an insert-then-update in the same batch applies in
 --      arbitrary order.
@@ -38,56 +41,7 @@ USE SCHEMA MFG.RAW;
 --   5. The INSERT branch falls back to PRIMARY_KEY__ for delete tombstones,
 --      because a DELETE event carries no payload at all.
 --
--- ALTER SESSION SET QUERY_TAG = '{"application":"SNOWFLAKE_OPENFLOW","operation":"cdc.merge.full_values","strategy":"full_values_snowflake_managed"}';
---
--- MERGE INTO MFG.RAW.QUALITY_INSPECTIONS AS TARGET
--- USING (
---     SELECT * FROM (
---         SELECT PRIMARY_KEY__INSPECTION_ID,
---                PAYLOAD__INSPECTION_ID, PAYLOAD__UNIT_ID, PAYLOAD__LINE, PAYLOAD__SKU,
---                PAYLOAD__STATUS, PAYLOAD__DEFECT_CODE, PAYLOAD__STATION_ID,
---                PAYLOAD__OPERATOR_ID, PAYLOAD__EVENT_TS, PAYLOAD__UPDATED_TS,
---                EVENT_TYPE,
---                ROW_NUMBER() OVER (
---                    PARTITION BY PRIMARY_KEY__INSPECTION_ID
---                    ORDER BY MOST_SIGNIFICANT_POSITION DESC,
---                             LEAST_SIGNIFICANT_POSITION DESC
---                ) AS ROW_NUM
---         FROM MFG.RAW.QUALITY_INSPECTIONS_JOURNAL_1787700000_1_STREAM
---         WHERE EVENT_TYPE IN ('IncrementalInsertRows',
---                              'IncrementalUpdateRows',
---                              'IncrementalDeleteRows')
---     ) WHERE ROW_NUM = 1
--- ) AS SOURCE
--- ON SOURCE.PRIMARY_KEY__INSPECTION_ID = TARGET.INSPECTION_ID
--- WHEN MATCHED AND SOURCE.EVENT_TYPE IN ('IncrementalInsertRows','IncrementalUpdateRows') THEN
---     UPDATE SET TARGET.INSPECTION_ID               = SOURCE.PAYLOAD__INSPECTION_ID,
---                TARGET.UNIT_ID              = SOURCE.PAYLOAD__UNIT_ID,
---                TARGET.LINE                  = SOURCE.PAYLOAD__LINE,
---                TARGET.SKU                   = SOURCE.PAYLOAD__SKU,
---                TARGET.STATUS                = SOURCE.PAYLOAD__STATUS,
---                TARGET.DEFECT_CODE           = SOURCE.PAYLOAD__DEFECT_CODE,
---                TARGET.STATION_ID            = SOURCE.PAYLOAD__STATION_ID,
---                TARGET.OPERATOR_ID           = SOURCE.PAYLOAD__OPERATOR_ID,
---                TARGET.EVENT_TS              = SOURCE.PAYLOAD__EVENT_TS,
---                TARGET.UPDATED_TS            = SOURCE.PAYLOAD__UPDATED_TS,
---                TARGET._SNOWFLAKE_DELETED    = FALSE,
---                TARGET._SNOWFLAKE_UPDATED_AT = SYSDATE()
--- WHEN MATCHED AND SOURCE.EVENT_TYPE = 'IncrementalDeleteRows' THEN
---     UPDATE SET TARGET._SNOWFLAKE_DELETED    = TRUE,
---                TARGET._SNOWFLAKE_UPDATED_AT = SYSDATE()
--- WHEN NOT MATCHED THEN
---     INSERT (INSPECTION_ID, UNIT_ID, LINE, SKU, STATUS, DEFECT_CODE, STATION_ID,
---             OPERATOR_ID, EVENT_TS, UPDATED_TS,
---             _SNOWFLAKE_INSERTED_AT, _SNOWFLAKE_UPDATED_AT, _SNOWFLAKE_DELETED)
---     VALUES (IFF(SOURCE.EVENT_TYPE = 'IncrementalDeleteRows',
---                 SOURCE.PRIMARY_KEY__INSPECTION_ID, SOURCE.PAYLOAD__INSPECTION_ID),
---             SOURCE.PAYLOAD__UNIT_ID, SOURCE.PAYLOAD__LINE, SOURCE.PAYLOAD__SKU,
---             SOURCE.PAYLOAD__STATUS, SOURCE.PAYLOAD__DEFECT_CODE,
---             SOURCE.PAYLOAD__STATION_ID, SOURCE.PAYLOAD__OPERATOR_ID,
---             SOURCE.PAYLOAD__EVENT_TS, SOURCE.PAYLOAD__UPDATED_TS,
---             SYSDATE(), SYSDATE(),
---             IFF(SOURCE.EVENT_TYPE = 'IncrementalDeleteRows', TRUE, FALSE));
+-- You do not need to run it yourself -- the producer does, once a minute.
 
 
 -- =====================================================================
@@ -170,15 +124,16 @@ FROM MFG.RAW.QUALITY_INSPECTIONS
 WHERE _SNOWFLAKE_UPDATED_AT > _SNOWFLAKE_INSERTED_AT AND NOT _SNOWFLAKE_DELETED
 LIMIT 5;
 
--- 8. Tighten the gate and watch the lag fall. This is the honest lesson about
---    where the latency actually lives: it is a schedule, and you choose it.
---    Restart the producer with a shorter gate and re-run checkpoint 4:
+-- 8. Where the latency actually lives: it is a schedule, and you choose it. The gate
+--    defaults to 60s -- the connector's own flow default of second :00 every minute.
+--    In a real deployment you change it with the connector's `Merge Task Schedule CRON`
+--    parameter; here it is `--merge-gate-seconds`. The trade is warehouse time: more
+--    merges, smaller batches.
 --
---      producer.py --profile producer/profile.json --cdc --telemetry \
---                  --merge-gate-seconds 10
---
---    In a real deployment this is the connector's `Merge Task Schedule CRON`
---    parameter. The trade is warehouse time: more merges, smaller batches.
+--    Changing it means restarting the producer, which this lab never asks you to do --
+--    so this is a knob to understand, not one to turn today. If you rehearse the lab
+--    from a shell later, start it with `--merge-gate-seconds 10` and re-run checkpoint
+--    4 to watch the gap shrink.
 
 
 -- =====================================================================
