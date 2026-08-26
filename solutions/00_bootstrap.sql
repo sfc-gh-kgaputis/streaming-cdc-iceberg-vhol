@@ -18,13 +18,13 @@
 -- ===================== BLOCK 1: account settings =====================
 USE ROLE ACCOUNTADMIN;
 
--- The producer emits UTC event times. Without this, every freshness and
--- per-layer latency measurement in the lab is off by your UTC offset.
+-- Set the account to UTC. The producer emits UTC event times, so this is what
+-- makes every freshness and per-layer latency measurement in the lab read right.
 ALTER ACCOUNT SET TIMEZONE = 'UTC';
 
--- REQUIRED for the agent step. This defaults to DISABLED on a fresh account,
--- which confines inference to your home region and shrinks both the model list
--- and the available Cortex features. The agent will degrade or fail without it.
+-- REQUIRED for the agent step. Set it now: a fresh account defaults to DISABLED,
+-- which confines inference to your home region and shrinks both the model list and
+-- the available Cortex features.
 ALTER ACCOUNT SET CORTEX_ENABLED_CROSS_REGION = 'ANY_REGION';
 
 
@@ -38,17 +38,17 @@ CREATE USER IF NOT EXISTS HOL_USER
   COMMENT = 'Iceberg CDC VHOL lab user';
 GRANT ROLE ACCOUNTADMIN TO USER HOL_USER;
 
--- Cortex access is NOT implied by ACCOUNTADMIN -- these are database roles and
--- have to be granted explicitly, or the agent step in Part 4 fails.
+-- Grant Cortex access explicitly. These are database roles, so ACCOUNTADMIN does
+-- not imply them, and the agent step in Part 4 needs them.
 GRANT DATABASE ROLE SNOWFLAKE.CORTEX_USER  TO ROLE ACCOUNTADMIN;
 GRANT DATABASE ROLE SNOWFLAKE.COPILOT_USER TO ROLE ACCOUNTADMIN;
 
--- Cortex Agents resolve permissions from the user's DEFAULT role, not the role
--- active in the session. HOL_USER's default is ACCOUNTADMIN above; keep it that
--- way or the agent will silently lose access to the pipeline.
+-- Leave HOL_USER's DEFAULT_ROLE as ACCOUNTADMIN, set above. Cortex Agents resolve
+-- permissions from the user's default role, not the role active in the session.
 
--- Tokens require the user to sit under a network policy. This one is permissive
--- because it is a throwaway lab account; do not copy this into anything real.
+-- Attach a network policy before minting the token: a token only authenticates if
+-- its user sits under one. This policy is permissive because it is a throwaway lab
+-- account; do not copy it into anything real.
 CREATE NETWORK POLICY IF NOT EXISTS HOL_NP ALLOWED_IP_LIST = ('0.0.0.0/0');
 ALTER USER HOL_USER SET NETWORK_POLICY = HOL_NP;
 

@@ -6,7 +6,7 @@
 -- a real Openflow connector does -- see producer/cdc_simulator.py, ensure_objects().
 --
 -- This file is what you use to LOOK at what it built and what it is doing:
--- the change events, the three event shapes, the SF_METADATA quirk, and above all
+-- the change events, the three event shapes, how to read SF_METADATA, and above all
 -- the merge gate.
 --
 -- The DDL used to live here. It moved into the connector because having attendees

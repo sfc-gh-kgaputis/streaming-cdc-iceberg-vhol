@@ -10,7 +10,7 @@ hands-on lab. Setup, the walkthrough, and troubleshooting are in
   Two skills in `.snowflake/cortex/skills/` load automatically when you open this
   folder: `streaming-cdc-iceberg-lab` supplies the object names, Iceberg settings
   and checkpoint queries every part expects, and `iceberg-external-read` covers
-  Optional act A. Nothing to install. You can name either explicitly with `$`, but
+  Part 6. Nothing to install. You can name either explicitly with `$`, but
   you never have to.
 - **Use the object names the skill gives you.** Later parts and every checkpoint
   query depend on them.
@@ -20,13 +20,14 @@ hands-on lab. Setup, the walkthrough, and troubleshooting are in
   excludes `secret.pat`, `profile.json`, and key files. Keep it that way — this repo
   is public.
 
-## Two things that break this lab
+## Two things to set before you build
 
-1. **The three schema defaults.** `EXTERNAL_VOLUME`, `CATALOG` and
-   `ICEBERG_VERSION_DEFAULT = 3` must be set on `MFG.RAW` and `MFG.ANALYTICS` *before* any
+1. **The three schema defaults.** Set `EXTERNAL_VOLUME`, `CATALOG` and
+   `ICEBERG_VERSION_DEFAULT = 3` on `MFG.RAW` and `MFG.ANALYTICS` both, *before* any
    table is created. `CREATE DYNAMIC ICEBERG TABLE` has no version clause and can
    only inherit them.
-2. **`CORTEX_ENABLED_CROSS_REGION`.** Defaults to `DISABLED` on a fresh account,
-   which degrades the agent in Part 4. `solutions/00_bootstrap.sql` sets it.
+2. **`CORTEX_ENABLED_CROSS_REGION`.** Set it to `ANY_REGION`, which
+   `solutions/00_bootstrap.sql` does. A fresh account defaults to `DISABLED`, which
+   degrades the agent in Part 4.
 
 `solutions/02_preflight.sql` checks both. Run it before building anything on top.

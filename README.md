@@ -7,6 +7,9 @@ operational database lands in **Apache Iceberg** tables, **Dynamic Tables** refi
 and an **AI agent** explains what is happening on the plant floor. You build it by prompting
 **Cortex Code**, not by pasting SQL.
 
+You leave with one open lakehouse: governed by Snowflake, and readable by any engine that speaks
+Iceberg. In Part 6 you prove that from your own laptop.
+
 ![Two feeds land in Snowflake-managed Apache Iceberg v3 tables. A simulated Openflow Postgres CDC connector appends change events to a journal table over Snowpipe Streaming, and an append-only stream feeds a MERGE that maintains the QUALITY_INSPECTIONS destination table with soft deletes. In parallel, station telemetry streams directly into the STATION_TELEMETRY Iceberg table. Four Dynamic Iceberg Tables refine both feeds incrementally: INSPECTIONS_ACTIVE filters soft-deleted rows and STATION_HEALTH rolls up telemetry, then YIELD_BY_LINE_5MIN joins scans to telemetry per five-minute bucket and DEFECT_COUNTS_5MIN counts defects. A semantic view sits over the gold tables, a Cortex Agent answers questions over the semantic view, and PyIceberg reads the same gold tables from outside Snowflake through the Horizon Catalog.](docs/architecture.svg)
 
 ## The scenario
@@ -23,52 +26,41 @@ walk over and stop it.
 Two minutes is the target because a human has to walk to the paint booth. Sub-second precision is
 wasted on that loop, and end-of-shift batch is far too slow.
 
-**The payoff is Part 5.** You will trigger a two-phase incident, booth humidity drifting up and then
-paint defects spiking, and ask the agent *why* yield dropped. To answer, it has to read across both
-data sources and notice that the cause preceded the effect. Then you will watch inspectors overturn
-failed frames and see yield **go back up**, including for time buckets that already reported.
-
 ## What you will understand by the end
 
-These are the things that change how you build:
-
-- Why `ICEBERG_VERSION_DEFAULT` resolves from your **session's** schema for a plain `CREATE ICEBERG
-  TABLE` but from the **target** schema for a Dynamic one, while `EXTERNAL_VOLUME` and `CATALOG` always
-  use the target, and why that forces a `USE SCHEMA` before every Iceberg `CREATE`.
-- Why a real CDC connector writes a **journal** and applies it on a gate, rather than writing your
-  destination table directly, and where the latency in that design lives.
-- What a soft delete costs you downstream, and why one missing predicate silently corrupts a yield
-  metric for ever.
-- How Dynamic Tables handle an aggregate that can go **down** as well as up, when a correction
-  rewrites history.
-- Why joining a second source is what lets an agent answer *why* instead of only *what*.
-- How a bundled Cortex Code skill turns a one-line prompt into exactly the right object.
+- **How a correction that arrives late rewrites metrics that already reported.** An inspector
+  overturns a failed frame an hour after the fact, and PAINT's yield for that 5-minute bucket goes
+  back **up**. An append-only pipeline cannot do this; it double-counts the frame or ignores the
+  correction.
+- **How Dynamic Tables keep a two-source join continuously fresh.** You set a target lag. There is no
+  orchestrator, no schedule, and no task, and the refresh stays incremental while the base tables are
+  being updated and deleted underneath it.
+- **Why a second data source is what lets an agent answer *why*.** Yield alone tells you PAINT is
+  scrapping frames. Yield joined to booth humidity tells you the cause, and the agent gets the order
+  right.
+- **That what you built is open Apache Iceberg, not a Snowflake format.** In Part 6 you read the same
+  tables from your own laptop with Python, through the Horizon Catalog, with no Snowflake warehouse in
+  the loop.
+- **How a bundled Cortex Code skill turns a one-line prompt into exactly the right object.** Write one
+  for your own stack and you stop re-explaining your conventions on every task.
 
 ## What is real, and what is simulated
 
-**Only the CDC connector is simulated.** Everything downstream is exactly what you would build for
-real: the Iceberg tables, the journal, the append-only stream, the MERGE, the Dynamic Tables, the
-semantic view, the agent.
+**Only the CDC connector is simulated.** A Python script stands in for Openflow's Postgres CDC
+connector, because standing up a source database and a connector runtime is an infrastructure
+exercise rather than a data-engineering one. Everything downstream is what you would build for real:
+the Iceberg tables, the journal, the append-only stream, the MERGE, the Dynamic Tables, the semantic
+view, the agent.
 
-Three reasons it is simulated:
+The simulator is faithful where it counts. It creates its own destination table, journal and stream,
+as the connector does. It writes the connector's journal schema, its three `EVENT_TYPE` shapes and its
+soft deletes, issues the MERGE on the connector's CRON eligibility gate with no Snowflake task, and
+stamps each merge with the connector's `QUERY_TAG`.
 
-- **Openflow is not typically available on trial accounts**, and this lab runs entirely in yours.
-- Standing up a source Postgres database and a connector runtime is an infrastructure exercise, not a
-  data-engineering one.
-- What matters is what lands *in* Snowflake and what you build on top of it.
-
-So the simulator is faithful where that matters. It creates its own destination table, journal and
-stream, as the real connector does. It writes the connector's journal schema, its three `EVENT_TYPE`
-shapes, and its soft deletes. It issues the MERGE itself on the connector's CRON eligibility gate,
-with no Snowflake task, because the real connector does not create one. And it stamps each merge with
-the connector's `QUERY_TAG` so you can audit it the way you would audit production.
-
-**Storage is Snowflake-managed Iceberg** (`EXTERNAL_VOLUME = 'SNOWFLAKE_MANAGED'`). A trial account has
-no connected cloud storage, so an external volume is not an option. It is also a good default in its
-own right: Snowflake handles the bucket, the catalog and file maintenance, and the tables are still
-open Iceberg that any engine can read. Optional A proves that from your laptop. Format version **3** is
-required rather than preferred, because the journal's `SF_METADATA` column is a `VARIANT` and v2 rejects
-`VARIANT` outright.
+**Storage is Snowflake-managed Iceberg** (`EXTERNAL_VOLUME = 'SNOWFLAKE_MANAGED'`). Snowflake owns the
+bucket, the catalog and file maintenance, so there is no cloud storage to provision and no IAM role to
+write. The tables are still open Iceberg that any engine can read, which is what Part 6 demonstrates.
+Use format version **3**: the journal's `SF_METADATA` column is a `VARIANT`, and v2 rejects `VARIANT`.
 
 ## What you need
 
@@ -84,13 +76,13 @@ Everything here is **pre-work**. Nothing installs during the session.
 - **Snowsight** in a browser tab, logged in to the same account. You will switch to it twice.
 - **Git** and **Python 3.9+** locally.
 
-## Repo layout
+### Repo layout
 
 | | |
 |---|---|
 | `producer/` | The data producer. You start it once, in Part 2, and leave it running. `main.py` is the file you invoke; `cdc_simulator.py` is the simulated connector, and is worth reading. |
 | `solutions/` | The fast path: finished SQL for every Part, numbered to match, safe to run at any time. Plus `progress.sql` ("where am I?") and `09_cleanup.sql`. |
-| `external/` | Optional act A: read your Iceberg tables from your laptop. |
+| `external/` | Part 6: read your Iceberg tables from your laptop with PyIceberg. |
 | `docs/` | The architecture diagram, and the three agent questions. |
 | `dashboard/` | The live dashboard the presenter shares on screen. Not a lab step. |
 | `.snowflake/` | Two Cortex Code skills that load automatically. See [How the skills work](#how-the-skills-work). |
@@ -122,12 +114,12 @@ Do these in order. If you arrive with all four checkpoints green, you will keep 
    ```sql
    USE ROLE ACCOUNTADMIN;
 
-   -- The producer emits UTC. Without this, every latency measurement below is off
-   -- by your UTC offset.
+   -- The producer emits UTC. Set the account to UTC so every latency measurement
+   -- below reads correctly.
    ALTER ACCOUNT SET TIMEZONE = 'UTC';
 
-   -- REQUIRED for the agent in Part 4. Defaults to DISABLED on a fresh account,
-   -- which shrinks the available models and Cortex features.
+   -- REQUIRED for the agent in Part 4. Set it now: a fresh account defaults to
+   -- DISABLED, which shrinks the available models and Cortex features.
    ALTER ACCOUNT SET CORTEX_ENABLED_CROSS_REGION = 'ANY_REGION';
 
    -- One identity for both Cortex Code and the producer, so you manage one credential.
@@ -136,12 +128,13 @@ Do these in order. If you arrive with all four checkpoints green, you will keep 
      COMMENT = 'Iceberg CDC VHOL lab user';
    GRANT ROLE ACCOUNTADMIN TO USER HOL_USER;
 
-   -- Cortex access is NOT implied by ACCOUNTADMIN. Without these the agent step fails.
+   -- Grant Cortex access explicitly. ACCOUNTADMIN does not imply it, and the
+   -- agent step needs it.
    GRANT DATABASE ROLE SNOWFLAKE.CORTEX_USER  TO ROLE ACCOUNTADMIN;
    GRANT DATABASE ROLE SNOWFLAKE.COPILOT_USER TO ROLE ACCOUNTADMIN;
 
-   -- A token is refused authentication unless its user sits under a network policy,
-   -- even though Snowflake will happily mint one without it.
+   -- Attach a network policy before minting the token. A token only authenticates
+   -- if its user sits under one.
    CREATE NETWORK POLICY IF NOT EXISTS HOL_NP ALLOWED_IP_LIST = ('0.0.0.0/0');
    ALTER USER HOL_USER SET NETWORK_POLICY = HOL_NP;
 
@@ -191,32 +184,42 @@ Do these in order. If you arrive with all four checkpoints green, you will keep 
    **Checkpoint:** user comes back as `HOL_USER`, role `ACCOUNTADMIN`, region starts with `AWS_`, and
    Cortex Code names the `streaming-cdc-iceberg-lab` skill as active.
 
-## D. Set up the producer environment
+## D. Set up the local environment
 
-7. **Build the virtual environment and the producer profile.**
+7. **Build the virtual environment, install the dependencies, and write the producer profile.**
 
    **Prompt:**
 
    ```text
-   Set up the data producer environment: the venv, and producer/profile.json.
+   Set up the local environment: the venv, dependencies, and producer/profile.json.
    ```
 
    The skill handles the rest: detecting your OS, using the right interpreter path for it, and why
-   macOS needs a virtual environment. Two packages, a few seconds. Your token is never printed to the
-   chat.
+   macOS needs a virtual environment. It installs both requirement sets, `producer/requirements.txt`
+   for the producer and `external/requirements.txt` for Part 6, so nothing installs during the session.
+   Three packages, about fifteen seconds. Your token is never printed to the chat.
 
-   **Checkpoint:** `producer/profile.json` exists with five keys, and this prints rows without touching
-   Snowflake:
+   **Checkpoint:** `producer/profile.json` exists with five keys, and both of these succeed without
+   touching Snowflake:
 
    ```bash
    .venv/bin/python producer/main.py --dry-run --cdc --seed 42
+   .venv/bin/python -c "import pyiceberg, snowflake.connector; print('deps ok')"
    ```
 
 ---
 
 # Run the lab
 
-Five Parts. Two optional acts follow the core. Do them if you are ahead.
+Six Parts, then two optional acts. Do the optional acts if you are ahead.
+
+If you heard the three Acts on the overview slide, this is how they map:
+
+| Act | Parts |
+|---|---|
+| 1 — Real-time ingestion | 1, 2 |
+| 2 — Continuous transformation | 3 |
+| 3 — Serve it: to an agent, and to any engine | 4, 5, 6 |
 
 **Prompt** blocks are what you paste into Cortex Code, not SQL and not a shell command. Use the copy
 button in the block's top-right corner. **Fast path** blocks are finished SQL for the same step, and
@@ -256,28 +259,18 @@ Two schemas, and the split is the shape of the pipeline rather than the shape of
 By the end you will be able to read the pipeline off a fully-qualified name. A table in `RAW` arrived
 from outside; a table in `ANALYTICS` was computed for you.
 
-Watch for a `USE SCHEMA` before each Iceberg `CREATE`:
+**Two rules put every Iceberg object on v3, and both are in the DDL you are about to approve.**
 
-**`ICEBERG_VERSION_DEFAULT` resolves from two different places depending on which `CREATE` you write,
-and this lab uses both.** `EXTERNAL_VOLUME` and `CATALOG` always resolve from the target schema, as you
-would expect. The version does not:
+1. Set all three defaults — `EXTERNAL_VOLUME`, `CATALOG` and `ICEBERG_VERSION_DEFAULT = 3` — on
+   **`MFG.RAW` and `MFG.ANALYTICS` both**. The Dynamic Tables you create in Part 3 land in
+   `MFG.ANALYTICS` and take their format version from that schema, with no version clause to override
+   it.
+2. Issue a **`USE SCHEMA` before each `CREATE ICEBERG TABLE`**, matching the schema you are creating
+   into. Watch for one above the telemetry table.
 
-| Statement | Version comes from |
-|---|---|
-| `CREATE ICEBERG TABLE` | your **session's current schema** |
-| `CREATE DYNAMIC ICEBERG TABLE` | the **target schema** |
-
-So a `CREATE ICEBERG TABLE MFG.RAW.T` issued while your session is somewhere else gets the right storage
-and silently lands on Iceberg **v2**, while `SHOW PARAMETERS` keeps reporting `3`. A v2 table then
-rejects `VARIANT` and rejects the `TIMESTAMP_NTZ(9)` that `TIME_SLICE()` produces, far from the actual
-cause. Iceberg has no in-place v2 → v3 upgrade, so a table that lands wrong has to be recreated. That is
-why there is a `USE SCHEMA` above the telemetry table.
-
-The Dynamic Tables in Part 3 are **immune** to that. They read the schema they are created in, and
-`CREATE DYNAMIC ICEBERG TABLE` has no version clause because it does not need one. But that cuts both
-ways: their format version depends *entirely* on `MFG.ANALYTICS` having the default set, with nothing
-you can override per statement if it does not. That is what the preflight is about to check, and why it
-checks both schemas rather than just the one you have built in.
+Confirm the version on the created table itself, with `iceberg_table_format_version`. The preflight
+below does that for every object. If something lands on v2, recreate it: Iceberg has no in-place
+v2 → v3 upgrade. [Troubleshooting](#troubleshooting) has the details.
 
 Notice what the telemetry table's DDL does **not** contain: no `CATALOG`, no `EXTERNAL_VOLUME`, no
 version. It inherits all three, and the preflight is about to prove it did.
@@ -401,36 +394,10 @@ the merge is not running; a gap of zero means you are looking between a merge an
 backlog. Each merge starts at second **:00** of a minute and finishes in a second or two. So the
 latency here is a schedule you chose, not a throughput limit.
 
-You will never build a Dynamic Table on this journal. It is connector-internal, its schema shifts with
-a generation counter, and the connector prunes it. You build on the destination table.
-
-### Two deep-dives, while the pipeline settles
-
-**Prompt:**
-
-```text
-Show me SF_METADATA, what type it really is, and pull the offset token out of it.
-```
-
-`SF_METADATA` is a `VARIANT` holding a JSON **string**, not a parsed object, because that is what the
-connector writes.
-
-**Checkpoint:** `SF_METADATA:offset_token` returns `NULL` and `TYPEOF(SF_METADATA)` says `VARCHAR`,
-while `PARSE_JSON(SF_METADATA::STRING):offset_token` returns an actual offset. Both are true at once: a
-`VARIANT` column is not a promise that its contents are parsed.
-
-**Prompt:**
-
-```text
-Find the connector's merges in query history using its query tag.
-```
-
-The connector stamps every merge with a `QUERY_TAG` identifying itself, its operation and its merge
-strategy. Filtering `QUERY_HISTORY` on that tag is how you would audit a real Openflow deployment, and
-it works identically here.
-
-**Checkpoint:** roughly one MERGE per minute since you started the producer, each beginning at second
-`:00` and finishing in a second or two. Many short merges on a schedule, not one long-running one.
+**Build on the destination table, `QUALITY_INSPECTIONS`, never on the journal.** The journal is
+connector-internal: its name carries a generation counter and the connector prunes it on its own
+retention schedule. `QUALITY_INSPECTIONS` is the table the connector maintains for you, and it is what
+Part 3 reads.
 
 ## Part 3 — Refine it with Dynamic Tables
 
@@ -602,31 +569,30 @@ now report better numbers.
 still `INCREMENTAL`. An append-only pipeline cannot do this; it would have double-counted the frame or
 ignored the correction entirely.
 
----
+## Part 6 — Read it from your laptop
 
-# Optional acts
+**Approach: run the script**, then read it.
 
-Core lab done. Both of these stand alone. Do either, both, or neither.
-
-## Optional A — Read your Iceberg tables from your laptop
-
-The claim this lab makes is that your data is in **open** Iceberg, governed by Snowflake but not
-locked inside it. This proves it. PyIceberg reads the Gold Dynamic Table straight from object storage
-through the Horizon Catalog, using vended credentials, and no Snowflake warehouse computes the scan. It
-is not free, though: Horizon catalog access is billed as external-engine access, even when the reader is
-another Snowflake account.
+Everything you built is open Apache Iceberg. This Part proves it from outside Snowflake. PyIceberg
+reads the Gold Dynamic Table straight from object storage through the Horizon Catalog, using vended
+credentials, and **no Snowflake warehouse computes the scan**. The dependencies are already in your
+venv from Setup D.
 
 ```bash
-pip install -r external/requirements.txt
-python external/read_iceberg.py
+.venv/bin/python external/read_iceberg.py
 ```
 
-This one ships pre-written rather than prompted. The auth path has two non-obvious steps that are not
-in the PyIceberg docs, and a broken first draft would cost more than it teaches. Read the script: it is
-100 lines and the comments explain both traps.
+**Checkpoint:** it prints Iceberg format version `v3`, a storage path under Snowflake's managed bucket
+(`s3://sfc-…-customer-interop-fs-…`), your rows, and a smaller row count after predicate pushdown on
+`LINE == 'PAINT'`. Those are the same bytes Snowflake reads, read by an engine that has never heard of
+Snowflake.
 
-It has its own skill, so if you want it to walk you through instead, name that skill directly. This is
-the second and last place the lab uses `$`:
+Horizon catalog access is billed as external-engine access, including when the reader is another
+Snowflake account. Budget for it the way you would budget for any engine reading your lakehouse.
+
+This Part ships pre-written rather than prompted. The auth path has two steps that are not in the
+PyIceberg docs, so read the script: it is 100 lines and the comments explain both. If you would rather
+be walked through it, name its skill directly. This is the second and last place the lab uses `$`:
 
 **Prompt:**
 
@@ -634,10 +600,42 @@ the second and last place the lab uses `$`:
 $iceberg-external-read Walk me through reading the Gold table.
 ```
 
-**Checkpoint:** it prints Iceberg format version `v3`, a storage path under Snowflake's managed bucket
-(`s3://sfc-…-customer-interop-fs-…`), your rows, and a smaller row count after predicate pushdown on
-`LINE == 'PAINT'`. Those are the same bytes Snowflake reads, read by an engine that has never heard of
-Snowflake.
+---
+
+# Optional acts
+
+Core lab done. Both of these stand alone. Do either, both, or neither.
+
+## Optional A — Look inside the connector
+
+Two beats on how the connector records itself. Neither is needed to build anything, and both are how
+you would audit a real Openflow deployment.
+
+**Prompt:**
+
+```text
+Show me SF_METADATA, what type it really is, and pull the offset token out of it.
+```
+
+`SF_METADATA` is a `VARIANT` holding a JSON **string**, not a parsed object, because that is what the
+connector writes. Parse it before you subscript it.
+
+**Checkpoint:** `SF_METADATA:offset_token` returns `NULL` and `TYPEOF(SF_METADATA)` says `VARCHAR`,
+while `PARSE_JSON(SF_METADATA::STRING):offset_token` returns an actual offset. A `VARIANT` column is not
+a promise that its contents are parsed.
+
+**Prompt:**
+
+```text
+Find the connector's merges in query history using its query tag.
+```
+
+The connector stamps every merge with a `QUERY_TAG` identifying itself, its operation and its merge
+strategy. Filtering `QUERY_HISTORY` on that tag is how you audit a real Openflow deployment, and it
+works identically here.
+
+**Checkpoint:** roughly one MERGE per minute since you started the producer, each beginning at second
+`:00` and finishing in a second or two. Many short merges on a schedule, not one long-running one.
 
 ## Optional B — Break it on purpose
 
@@ -728,7 +726,7 @@ this folder. There is nothing to install, and nothing to type.
 | Skill | What it carries |
 |---|---|
 | `streaming-cdc-iceberg-lab` | The object model, the measured Iceberg constraints, every checkpoint, and the rules for building each layer. This is why a one-line prompt produces exactly the right table. |
-| `iceberg-external-read` | Optional act A only: the Horizon catalog auth path and its two traps. Separate because it is a standalone activity that nothing else depends on. |
+| `iceberg-external-read` | Part 6 only: the Horizon catalog auth path and its two traps. Separate because it is a standalone activity that nothing else depends on. |
 
 Neither keeps a copy of the DDL. Both point at `solutions/`, so there is only ever one version of any
 statement.
@@ -739,7 +737,7 @@ re-explaining your conventions to an agent on every task.
 
 **Naming a skill with `$`.** Auto-loading is the mechanism here, so almost every prompt in this lab is
 plain English. But you can always name a skill explicitly, and the lab does it twice, in Setup C and in
-Optional A, so you have seen the syntax:
+Part 6, so you have seen the syntax:
 
 ```text
 $streaming-cdc-iceberg-lab <your request>
