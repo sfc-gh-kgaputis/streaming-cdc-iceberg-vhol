@@ -46,7 +46,7 @@ were unaffected.
 
 **Why this is the whole lab:** humidity comes from the Snowpipe Streaming telemetry feed. Defects and
 yield come from the CDC feed. Nothing in either source alone contains the answer. It exists only
-because `DT_YIELD_BY_LINE_5MIN` joined them on line and 5-minute bucket in Part 3. An agent over the
+because `YIELD_BY_LINE_5MIN` joined them on line and 5-minute bucket in Part 3. An agent over the
 CDC feed alone can tell you *what* happened and never *why*.
 
 ---

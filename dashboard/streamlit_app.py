@@ -43,7 +43,7 @@ def _fetch_yield(session) -> pd.DataFrame:
             SCRAP_UNITS,
             FIRST_PASS_YIELD_PCT::FLOAT AS FIRST_PASS_YIELD_PCT,
             AVG_BOOTH_HUMIDITY
-        FROM MFG.CDC.DT_YIELD_BY_LINE_5MIN
+        FROM MFG.ANALYTICS.YIELD_BY_LINE_5MIN
         WHERE BUCKET >= DATEADD('minute', -{LOOKBACK_MINUTES}, CURRENT_TIMESTAMP())
         ORDER BY BUCKET ASC, LINE
     """).to_pandas()
@@ -54,7 +54,7 @@ def _fetch_yield(session) -> pd.DataFrame:
 def _fetch_defects(session) -> pd.DataFrame:
     df = session.sql("""
         SELECT LINE, DEFECT_CODE, SUM(N) AS N
-        FROM MFG.CDC.DT_DEFECT_COUNTS_5MIN
+        FROM MFG.ANALYTICS.DEFECT_COUNTS_5MIN
         WHERE DEFECT_CODE <> 'NONE'
           AND BUCKET >= DATEADD('minute', -15, CURRENT_TIMESTAMP())
         GROUP BY 1, 2

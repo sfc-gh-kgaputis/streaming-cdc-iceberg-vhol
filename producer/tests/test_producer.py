@@ -69,7 +69,7 @@ class TestJournalEventShape:
         row["UPDATED_TS"] = "2024-01-01T00:00:00.000"
         ev = p.journal_event("S-abc", p.EV_INSERT, row, 10000, 10001)
         assert ev["EVENT_TYPE"] == p.EV_INSERT
-        assert ev["PRIMARY_KEY__SCAN_ID"] == "S-abc"
+        assert ev["PRIMARY_KEY__INSPECTION_ID"] == "S-abc"
         for col in p.SOURCE_COLUMNS:
             assert f"PAYLOAD__{col}" in ev, f"PAYLOAD__{col} missing from INSERT event"
 
@@ -80,14 +80,14 @@ class TestJournalEventShape:
         row["UPDATED_TS"] = "2024-01-01T00:00:00.000"
         ev = p.journal_event("OLD-KEY", p.EV_UPDATE, row, 20000, 20001)
         assert ev["EVENT_TYPE"] == p.EV_UPDATE
-        assert ev["PRIMARY_KEY__SCAN_ID"] == "OLD-KEY"
-        assert ev["PAYLOAD__SCAN_ID"] == "new-SCAN_ID"
+        assert ev["PRIMARY_KEY__INSPECTION_ID"] == "OLD-KEY"
+        assert ev["PAYLOAD__INSPECTION_ID"] == "new-INSPECTION_ID"
 
     def test_delete_has_null_payload_and_correct_key(self):
         """On DELETE the connector sends the key only; every PAYLOAD__* is NULL."""
         ev = p.journal_event("S-xyz", p.EV_DELETE, None, 30000, 30001)
         assert ev["EVENT_TYPE"] == p.EV_DELETE
-        assert ev["PRIMARY_KEY__SCAN_ID"] == "S-xyz"
+        assert ev["PRIMARY_KEY__INSPECTION_ID"] == "S-xyz"
         for col in p.SOURCE_COLUMNS:
             assert ev[f"PAYLOAD__{col}"] is None, (
                 f"PAYLOAD__{col} must be NULL on DELETE — MERGE branches on this"
@@ -192,7 +192,7 @@ class TestReinspectShaping:
         sim = p.CdcSimulator(make_args(seed=5, reinspect=True, delete_rate=0.0), sink)
         for _ in range(20):
             sim.tick(5)
-        inserted_ids = {r["SCAN_ID"] for r, _, _ in sink.inserts}
+        inserted_ids = {r["INSPECTION_ID"] for r, _, _ in sink.inserts}
         for old_key, _new_row, _msn, _lsn in sink.updates:
             assert old_key in inserted_ids, (
                 f"UPDATE key {old_key!r} was never inserted in this run"
@@ -239,10 +239,10 @@ class TestDeterminism:
         sim = p.CdcSimulator(make_args(seed=seed), sink)
         for _ in range(10):
             sim.tick(5)
-        # SCAN_ID uses uuid4() which is not seeded by self.rng — exclude it.
-        # All other fields (LINE, STATUS, DEFECT_CODE, SKU, FRAME_ID) are RNG-seeded.
+        # INSPECTION_ID uses uuid4() which is not seeded by self.rng — exclude it.
+        # All other fields (LINE, STATUS, DEFECT_CODE, SKU, UNIT_ID) are RNG-seeded.
         return [
-            (r["FRAME_ID"], r["STATUS"], r["LINE"], r["DEFECT_CODE"])
+            (r["UNIT_ID"], r["STATUS"], r["LINE"], r["DEFECT_CODE"])
             for r, _, _ in sink.inserts
         ]
 

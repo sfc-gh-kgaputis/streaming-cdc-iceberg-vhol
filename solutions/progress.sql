@@ -28,23 +28,23 @@
 --
 -- THE AGENT IS NOT LISTED. Agents have no INFORMATION_SCHEMA view, so it
 -- would cost a second statement. Its checkpoint is its own:
---     SHOW AGENTS LIKE 'CASCADE_PLANT_ANALYST' IN SCHEMA MFG.CDC;
+--     SHOW AGENTS LIKE 'CASCADE_PLANT_ANALYST' IN SCHEMA MFG.ANALYTICS;
 -- =====================================================================
 
 USE ROLE ACCOUNTADMIN;
 USE WAREHOUSE HOL_WH;
-USE SCHEMA MFG.CDC;
+USE SCHEMA MFG.ANALYTICS;
 
 WITH expected AS (
     SELECT * FROM VALUES
-      (1, 'Part 1', 'CDC', 'PRODUCTION_SCANS',         'table',           'CDC destination, maintained by the MERGE'),
-      (2, 'Part 1', 'RAW', 'STATION_TELEMETRY',        'iceberg table',   'telemetry, straight from Snowpipe Streaming'),
-      (3, 'Part 1', 'CDC', 'PRODUCTION_SCANS_JOURNAL', 'iceberg journal', 'change events, connector-internal'),
-      (4, 'Part 3', 'CDC', 'DT_SCANS_ACTIVE',          'dynamic table',   'soft deletes filtered out'),
-      (5, 'Part 3', 'CDC', 'DT_STATION_HEALTH',        'dynamic table',   'telemetry rolled up per 5 min'),
-      (6, 'Part 3', 'CDC', 'DT_YIELD_BY_LINE_5MIN',    'dynamic table',   'GOLD -- the two-source join'),
-      (7, 'Part 3', 'CDC', 'DT_DEFECT_COUNTS_5MIN',    'dynamic table',   'GOLD -- counts at defect grain'),
-      (8, 'Part 4', 'CDC', 'PLANT_FLOOR_SV',           'semantic view',   'what the agent reads')
+      (1, 'Part 1', 'RAW',       'QUALITY_INSPECTIONS',         'table',           'CDC destination, maintained by the MERGE'),
+      (2, 'Part 1', 'RAW',       'STATION_TELEMETRY',           'iceberg table',   'telemetry, straight from Snowpipe Streaming'),
+      (3, 'Part 1', 'RAW',       'QUALITY_INSPECTIONS_JOURNAL', 'iceberg journal', 'change events, connector-internal'),
+      (4, 'Part 3', 'ANALYTICS', 'INSPECTIONS_ACTIVE',          'dynamic table',   'soft deletes filtered out'),
+      (5, 'Part 3', 'ANALYTICS', 'STATION_HEALTH',              'dynamic table',   'telemetry rolled up per 5 min'),
+      (6, 'Part 3', 'ANALYTICS', 'YIELD_BY_LINE_5MIN',          'dynamic table',   'GOLD -- the two-source join'),
+      (7, 'Part 3', 'ANALYTICS', 'DEFECT_COUNTS_5MIN',          'dynamic table',   'GOLD -- counts at defect grain'),
+      (8, 'Part 4', 'ANALYTICS', 'PLANT_FLOOR_SV',              'semantic view',   'what the agent reads')
       AS t(seq, part, schema_name, object_name, kind, what_it_is)
 ),
 built AS (
@@ -75,12 +75,12 @@ ORDER BY e.seq;
 -- =====================================================================
 -- Everything through your current Part says 'built'.
 --
--- PRODUCTION_SCANS has FEWER rows than the journal. That is the merge gate,
+-- QUALITY_INSPECTIONS has FEWER rows than the journal. That is the merge gate,
 -- not a fault -- see Part 2.
 --
--- DT_YIELD_BY_LINE_5MIN has very few rows: three lines times however many
+-- YIELD_BY_LINE_5MIN has very few rows: three lines times however many
 -- 5-minute buckets have elapsed. Nine rows after fifteen minutes is correct.
--- Do not compare it to PRODUCTION_SCANS and conclude something is broken.
+-- Do not compare it to QUALITY_INSPECTIONS and conclude something is broken.
 --
 -- Any table showing 'built' with 0 rows and no growth means the producer is
 -- not running, or is running without the flag for that feed.

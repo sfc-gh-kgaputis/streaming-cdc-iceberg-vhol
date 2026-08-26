@@ -36,9 +36,9 @@
 
 USE ROLE ACCOUNTADMIN;
 USE WAREHOUSE HOL_WH;
-USE SCHEMA MFG.CDC;
+USE SCHEMA MFG.ANALYTICS;
 
-CREATE OR REPLACE AGENT MFG.CDC.CASCADE_PLANT_ANALYST
+CREATE OR REPLACE AGENT MFG.ANALYTICS.CASCADE_PLANT_ANALYST
 WITH PROFILE='{"display_name":"Cascade Plant Analyst"}'
 FROM SPECIFICATION $$
 {
@@ -53,7 +53,7 @@ FROM SPECIFICATION $$
   ],
   "tool_resources": {
     "plant_floor": {
-      "semantic_view": "MFG.CDC.PLANT_FLOOR_SV",
+      "semantic_view": "MFG.ANALYTICS.PLANT_FLOOR_SV",
       "execution_environment": { "type": "warehouse", "warehouse": "HOL_WH" }
     }
   }
@@ -64,7 +64,7 @@ $$;
 -- =====================================================================
 -- CHECKPOINT
 -- =====================================================================
-SHOW AGENTS LIKE 'CASCADE_PLANT_ANALYST' IN SCHEMA MFG.CDC;
+SHOW AGENTS LIKE 'CASCADE_PLANT_ANALYST' IN SCHEMA MFG.ANALYTICS;
 
 -- Then go to Snowsight -> AI & ML -> Agents -> Cascade Plant Analyst and ask,
 -- in this order. The third one is the payoff:

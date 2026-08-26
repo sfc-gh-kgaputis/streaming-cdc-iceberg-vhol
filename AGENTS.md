@@ -21,7 +21,7 @@ hands-on lab. Setup, the walkthrough, and troubleshooting are in
 ## Two things that break this lab
 
 1. **The three schema defaults.** `EXTERNAL_VOLUME`, `CATALOG` and
-   `ICEBERG_VERSION_DEFAULT = 3` must be set on `MFG.CDC` and `MFG.RAW` *before* any
+   `ICEBERG_VERSION_DEFAULT = 3` must be set on `MFG.RAW` and `MFG.ANALYTICS` *before* any
    table is created. `CREATE DYNAMIC ICEBERG TABLE` has no version clause and can
    only inherit them.
 2. **`CORTEX_ENABLED_CROSS_REGION`.** Defaults to `DISABLED` on a fresh account,

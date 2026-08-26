@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1180 520" width="1180" height="520" role="img" aria-labelledby="diagramTitle diagramDesc" font-family="Inter, Helvetica, Arial, sans-serif">
   <title id="diagramTitle">Cascade Cycleworks real-time pipeline: CDC and streaming telemetry into Apache Iceberg, refined by Dynamic Tables, served to an agent and to external engines</title>
-  <desc id="diagramDesc">Two source feeds flow left to right through four stages. Stage one, sources: a Postgres MES database of frame scans, and station sensors emitting telemetry. Stage two, landing in Snowflake-managed Apache Iceberg v3: the simulated Openflow Postgres CDC connector appends change events to the PRODUCTION_SCANS_JOURNAL Iceberg table over Snowpipe Streaming, an APPEND_ONLY stream feeds a MERGE issued by the connector itself on a thirty-second gate, and that MERGE maintains the PRODUCTION_SCANS destination table using soft deletes; in parallel, station telemetry streams directly into the STATION_TELEMETRY Iceberg table. Stage three, refinement by four Dynamic Iceberg Tables: DT_SCANS_ACTIVE filters soft-deleted rows out of PRODUCTION_SCANS and DT_STATION_HEALTH rolls up STATION_TELEMETRY, then DT_YIELD_BY_LINE_5MIN joins those two on line and five-minute bucket while DT_DEFECT_COUNTS_5MIN counts defects at their natural grain. All four refresh incrementally with a one-minute target lag. Stage four, serving: the semantic view PLANT_FLOOR_SV sits over the two gold tables, the Cascade Plant Analyst Cortex Agent answers plain-language questions through that semantic view, and PyIceberg reads the same gold tables from a laptop through the Horizon Catalog with vended credentials, bypassing Snowflake compute entirely.</desc>
+  <desc id="diagramDesc">Two source feeds flow left to right through four stages. Stage one, sources: a Postgres MES database of frame scans, and station sensors emitting telemetry. Stage two, landing in Snowflake-managed Apache Iceberg v3: the simulated Openflow Postgres CDC connector appends change events to the QUALITY_INSPECTIONS_JOURNAL Iceberg table over Snowpipe Streaming, an APPEND_ONLY stream feeds a MERGE issued by the connector itself on a thirty-second gate, and that MERGE maintains the QUALITY_INSPECTIONS destination table using soft deletes; in parallel, station telemetry streams directly into the STATION_TELEMETRY Iceberg table. Stage three, refinement by four Dynamic Iceberg Tables: INSPECTIONS_ACTIVE filters soft-deleted rows out of QUALITY_INSPECTIONS and STATION_HEALTH rolls up STATION_TELEMETRY, then YIELD_BY_LINE_5MIN joins those two on line and five-minute bucket while DEFECT_COUNTS_5MIN counts defects at their natural grain. All four refresh incrementally with a one-minute target lag. Stage four, serving: the semantic view PLANT_FLOOR_SV sits over the two gold tables, the Cascade Plant Analyst Cortex Agent answers plain-language questions through that semantic view, and PyIceberg reads the same gold tables from a laptop through the Horizon Catalog with vended credentials, bypassing Snowflake compute entirely.</desc>
 
   <defs>
     <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
@@ -49,12 +49,12 @@
 
   <!-- ── landing: journal -> merge -> destination ──────────────── -->
   <rect class="ice" x="252" y="88" width="176" height="60"/>
-  <text class="name" x="340" y="110" text-anchor="middle">PRODUCTION_SCANS</text>
+  <text class="name" x="340" y="110" text-anchor="middle">QUALITY_INSPECTIONS</text>
   <text class="name" x="340" y="126" text-anchor="middle">_JOURNAL</text>
   <text class="sub"  x="340" y="142" text-anchor="middle">Iceberg v3 · append-only stream</text>
 
   <rect class="std" x="252" y="192" width="176" height="54"/>
-  <text class="name" x="340" y="214" text-anchor="middle">PRODUCTION_SCANS</text>
+  <text class="name" x="340" y="214" text-anchor="middle">QUALITY_INSPECTIONS</text>
   <text class="sub"  x="340" y="232" text-anchor="middle">standard table · soft deletes</text>
 
   <rect class="ice" x="252" y="286" width="176" height="54"/>
@@ -76,22 +76,22 @@
 
   <!-- ── refine: layer one ─────────────────────────────────────── -->
   <rect class="dt" x="580" y="192" width="120" height="54"/>
-  <text class="name" x="640" y="214" text-anchor="middle">DT_SCANS</text>
+  <text class="name" x="640" y="214" text-anchor="middle">INSPECTIONS</text>
   <text class="name" x="640" y="229" text-anchor="middle">_ACTIVE</text>
   <text class="sub"  x="640" y="242" text-anchor="middle">drops deleted</text>
 
   <rect class="dt" x="580" y="286" width="120" height="54"/>
-  <text class="name" x="640" y="308" text-anchor="middle">DT_STATION</text>
+  <text class="name" x="640" y="308" text-anchor="middle">STATION</text>
   <text class="name" x="640" y="323" text-anchor="middle">_HEALTH</text>
 
   <!-- refine: gold -->
   <rect class="dt" x="722" y="150" width="112" height="62"/>
-  <text class="name" x="778" y="172" text-anchor="middle">DT_YIELD_BY</text>
+  <text class="name" x="778" y="172" text-anchor="middle">YIELD_BY</text>
   <text class="name" x="778" y="187" text-anchor="middle">_LINE_5MIN</text>
   <text class="sub"  x="778" y="202" text-anchor="middle">the join</text>
 
   <rect class="dt" x="722" y="252" width="112" height="62"/>
-  <text class="name" x="778" y="274" text-anchor="middle">DT_DEFECT</text>
+  <text class="name" x="778" y="274" text-anchor="middle">DEFECT</text>
   <text class="name" x="778" y="289" text-anchor="middle">_COUNTS_5MIN</text>
   <text class="sub"  x="778" y="304" text-anchor="middle">defect grain</text>
 
@@ -99,7 +99,7 @@
   <path class="edge" d="M 428 219 L 578 219"/>
   <path class="edge" d="M 428 313 L 578 313"/>
 
-  <!-- layer one -> gold: the join is two edges into DT_YIELD -->
+  <!-- layer one -> gold: the join is two edges into YIELD_BY_LINE_5MIN -->
   <path class="edge" d="M 700 210 C 712 200 712 190 720 181"/>
   <path class="edge" d="M 700 300 C 712 260 706 200 720 190"/>
   <path class="edge" d="M 700 232 C 712 250 710 268 720 279"/>

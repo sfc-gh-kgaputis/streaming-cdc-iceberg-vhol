@@ -6,7 +6,7 @@ Two sources in one process, mirroring what runs in production:
   --cdc         Stands in for the Openflow PostgreSQL CDC connector: it writes a
                 CDC *journal* over Snowpipe Streaming, exactly as the connector
                 does, and a scheduled MERGE task applies the journal to
-                MFG.CDC.PRODUCTION_SCANS.
+                MFG.RAW.QUALITY_INSPECTIONS.
 
   --telemetry   Snowpipe Streaming into the Iceberg table
                 MFG.RAW.STATION_TELEMETRY.
@@ -18,7 +18,7 @@ CDC modes
   --cdc-mode journal   (default) faithful: journal table -> APPEND_ONLY stream
                        -> gated MERGE. Reproduces soft deletes, per-key dedup on
                        the LSN tuple, and the ~60s merge-gate latency.
-  --cdc-mode direct    writes the settled result straight to PRODUCTION_SCANS
+  --cdc-mode direct    writes the settled result straight to QUALITY_INSPECTIONS
                        with ordinary DML. No journal, no stream, no task. Useful
                        as a fallback if the journal objects are missing.
 
@@ -96,7 +96,7 @@ INCIDENT_HUMIDITY = 71.0
 # ---------------------------------------------------------------------------
 # Object names
 # ---------------------------------------------------------------------------
-SCANS_TABLE = "MFG.CDC.PRODUCTION_SCANS"
+SCANS_TABLE = "MFG.RAW.QUALITY_INSPECTIONS"
 
 # The connector names its journal "<TABLE>_JOURNAL_<series>_<generation>", where
 # series is epoch seconds at table registration and generation starts at 1 and
@@ -104,10 +104,10 @@ SCANS_TABLE = "MFG.CDC.PRODUCTION_SCANS"
 # object names the skill can reference; in production it is not predictable.
 JOURNAL_SERIES = "1787700000"
 JOURNAL_GENERATION = "1"
-JOURNAL_TABLE = f"PRODUCTION_SCANS_JOURNAL_{JOURNAL_SERIES}_{JOURNAL_GENERATION}"
+JOURNAL_TABLE = f"QUALITY_INSPECTIONS_JOURNAL_{JOURNAL_SERIES}_{JOURNAL_GENERATION}"
 
 TELEMETRY_DB, TELEMETRY_SCHEMA, TELEMETRY_TABLE = "MFG", "RAW", "STATION_TELEMETRY"
-CDC_DB, CDC_SCHEMA = "MFG", "CDC"
+JOURNAL_DB, JOURNAL_SCHEMA = "MFG", "RAW"
 
 # EVENT_TYPE literals. These are the connector's exact strings; the MERGE
 # branches on them.
@@ -118,8 +118,8 @@ EV_DELETE = "IncrementalDeleteRows"
 # Source columns, in order. Drives both the journal PAYLOAD__* columns and the
 # destination table.
 SOURCE_COLUMNS = [
-    "SCAN_ID",
-    "FRAME_ID",
+    "INSPECTION_ID",
+    "UNIT_ID",
     "LINE",
     "SKU",
     "STATUS",
@@ -143,27 +143,27 @@ MERGE_QUERY_TAG = json.dumps(
 # The MERGE the connector's merge processor issues. Not a Snowflake task -- the
 # connector runs this itself over its own Snowflake connection. See merge_loop().
 MERGE_SQL = f"""
-MERGE INTO MFG.CDC.PRODUCTION_SCANS AS TARGET
+MERGE INTO MFG.RAW.QUALITY_INSPECTIONS AS TARGET
 USING (
     SELECT * FROM (
-        SELECT PRIMARY_KEY__SCAN_ID,
-               PAYLOAD__SCAN_ID, PAYLOAD__FRAME_ID, PAYLOAD__LINE, PAYLOAD__SKU,
+        SELECT PRIMARY_KEY__INSPECTION_ID,
+               PAYLOAD__INSPECTION_ID, PAYLOAD__UNIT_ID, PAYLOAD__LINE, PAYLOAD__SKU,
                PAYLOAD__STATUS, PAYLOAD__DEFECT_CODE, PAYLOAD__STATION_ID,
                PAYLOAD__OPERATOR_ID, PAYLOAD__EVENT_TS, PAYLOAD__UPDATED_TS,
                EVENT_TYPE,
                ROW_NUMBER() OVER (
-                   PARTITION BY PRIMARY_KEY__SCAN_ID
+                   PARTITION BY PRIMARY_KEY__INSPECTION_ID
                    ORDER BY MOST_SIGNIFICANT_POSITION DESC,
                             LEAST_SIGNIFICANT_POSITION DESC
                ) AS ROW_NUM
-        FROM MFG.CDC.{JOURNAL_TABLE}_STREAM
+        FROM MFG.RAW.{JOURNAL_TABLE}_STREAM
         WHERE EVENT_TYPE IN ('{EV_INSERT}', '{EV_UPDATE}', '{EV_DELETE}')
     ) WHERE ROW_NUM = 1
 ) AS SOURCE
-ON SOURCE.PRIMARY_KEY__SCAN_ID = TARGET.SCAN_ID
+ON SOURCE.PRIMARY_KEY__INSPECTION_ID = TARGET.INSPECTION_ID
 WHEN MATCHED AND SOURCE.EVENT_TYPE IN ('{EV_INSERT}', '{EV_UPDATE}') THEN
-    UPDATE SET TARGET.SCAN_ID               = SOURCE.PAYLOAD__SCAN_ID,
-               TARGET.FRAME_ID              = SOURCE.PAYLOAD__FRAME_ID,
+    UPDATE SET TARGET.INSPECTION_ID          = SOURCE.PAYLOAD__INSPECTION_ID,
+               TARGET.UNIT_ID               = SOURCE.PAYLOAD__UNIT_ID,
                TARGET.LINE                  = SOURCE.PAYLOAD__LINE,
                TARGET.SKU                   = SOURCE.PAYLOAD__SKU,
                TARGET.STATUS                = SOURCE.PAYLOAD__STATUS,
@@ -178,12 +178,12 @@ WHEN MATCHED AND SOURCE.EVENT_TYPE = '{EV_DELETE}' THEN
     UPDATE SET TARGET._SNOWFLAKE_DELETED    = TRUE,
                TARGET._SNOWFLAKE_UPDATED_AT = SYSDATE()
 WHEN NOT MATCHED THEN
-    INSERT (SCAN_ID, FRAME_ID, LINE, SKU, STATUS, DEFECT_CODE, STATION_ID,
+    INSERT (INSPECTION_ID, UNIT_ID, LINE, SKU, STATUS, DEFECT_CODE, STATION_ID,
             OPERATOR_ID, EVENT_TS, UPDATED_TS,
             _SNOWFLAKE_INSERTED_AT, _SNOWFLAKE_UPDATED_AT, _SNOWFLAKE_DELETED)
     VALUES (IFF(SOURCE.EVENT_TYPE = '{EV_DELETE}',
-                SOURCE.PRIMARY_KEY__SCAN_ID, SOURCE.PAYLOAD__SCAN_ID),
-            SOURCE.PAYLOAD__FRAME_ID, SOURCE.PAYLOAD__LINE, SOURCE.PAYLOAD__SKU,
+                SOURCE.PRIMARY_KEY__INSPECTION_ID, SOURCE.PAYLOAD__INSPECTION_ID),
+            SOURCE.PAYLOAD__UNIT_ID, SOURCE.PAYLOAD__LINE, SOURCE.PAYLOAD__SKU,
             SOURCE.PAYLOAD__STATUS, SOURCE.PAYLOAD__DEFECT_CODE,
             SOURCE.PAYLOAD__STATION_ID, SOURCE.PAYLOAD__OPERATOR_ID,
             SOURCE.PAYLOAD__EVENT_TS, SOURCE.PAYLOAD__UPDATED_TS,
@@ -228,9 +228,9 @@ class CdcSimulator:
         self.sink = sink
         self.rng = random.Random(args.seed)
         self.frame_seq = 0
-        self.rows: dict[str, Any] = {}  # scan_id -> current row state
-        self.recent_fails: list[str] = []  # scan_ids eligible for re-inspection
-        self.recent_scans: list[str] = []  # scan_ids eligible for voiding
+        self.rows: dict[str, Any] = {}  # inspection_id -> current row state
+        self.recent_fails: list[str] = []  # inspection_ids eligible for re-inspection
+        self.recent_scans: list[str] = []  # inspection_ids eligible for voiding
         self.incident_until = None
         self.counts: dict[str, int] = {"insert": 0, "update": 0, "delete": 0}
         # Logical WAL clock. batch = transaction, msg = position within it.
@@ -270,8 +270,8 @@ class CdcSimulator:
 
         now = utcnow()
         return {
-            "SCAN_ID": f"S-{uuid.uuid4().hex[:12]}",
-            "FRAME_ID": f"F-{self.frame_seq:06d}",
+            "INSPECTION_ID": f"S-{uuid.uuid4().hex[:12]}",
+            "UNIT_ID": f"F-{self.frame_seq:06d}",
             "LINE": line,
             "SKU": self.rng.choice(SKUS),
             "STATUS": "FAIL" if failed else "PASS",
@@ -296,12 +296,12 @@ class CdcSimulator:
         rows = [self.new_scan() for _ in range(n)]
         fails_this_tick = 0
         for r in rows:
-            self.rows[r["SCAN_ID"]] = r
+            self.rows[r["INSPECTION_ID"]] = r
             self.sink.emit_insert(r, msn, next_lsn())
             self.counts["insert"] += 1
-            self.recent_scans.append(r["SCAN_ID"])
+            self.recent_scans.append(r["INSPECTION_ID"])
             if r["STATUS"] == "FAIL":
-                self.recent_fails.append(r["SCAN_ID"])
+                self.recent_fails.append(r["INSPECTION_ID"])
                 fails_this_tick += 1
         self.recent_scans = self.recent_scans[-4000:]
         self.recent_fails = self.recent_fails[-2000:]
@@ -322,17 +322,17 @@ class CdcSimulator:
         for _ in range(n_upd):
             if not self.recent_fails:
                 break
-            scan_id = self.recent_fails.pop(self.rng.randrange(len(self.recent_fails)))
-            row = self.rows.get(scan_id)
+            inspection_id = self.recent_fails.pop(self.rng.randrange(len(self.recent_fails)))
+            row = self.rows.get(inspection_id)
             if row is None:
                 continue
             updated = copy.copy(row)
             updated["STATUS"] = "PASS"
             updated["DEFECT_CODE"] = None
             updated["UPDATED_TS"] = utcnow()
-            self.rows[scan_id] = updated
+            self.rows[inspection_id] = updated
             # old key, new payload -- the connector's UPDATE shape
-            self.sink.emit_update(scan_id, updated, msn, next_lsn())
+            self.sink.emit_update(inspection_id, updated, msn, next_lsn())
             self.counts["update"] += 1
 
         # DELETE: a duplicate barcode scan is voided. Soft delete downstream.
@@ -340,11 +340,11 @@ class CdcSimulator:
         for _ in range(n_del):
             if not self.recent_scans:
                 break
-            scan_id = self.recent_scans.pop(self.rng.randrange(len(self.recent_scans)))
-            if scan_id not in self.rows:
+            inspection_id = self.recent_scans.pop(self.rng.randrange(len(self.recent_scans)))
+            if inspection_id not in self.rows:
                 continue
-            self.sink.emit_delete(scan_id, msn, next_lsn())
-            self.rows.pop(scan_id, None)
+            self.sink.emit_delete(inspection_id, msn, next_lsn())
+            self.rows.pop(inspection_id, None)
             self.counts["delete"] += 1
 
         self.sink.tick_done()
@@ -432,7 +432,7 @@ def journal_event(
     replication key is immutable). On DELETE every PAYLOAD__* is NULL.
     """
     ev: dict[str, Any] = {
-        "PRIMARY_KEY__SCAN_ID": pk,
+        "PRIMARY_KEY__INSPECTION_ID": pk,
         "LEAST_SIGNIFICANT_POSITION": lsn,
         "MOST_SIGNIFICANT_POSITION": msn,
         "EVENT_TYPE": event_type,
@@ -462,8 +462,8 @@ class JournalSink(CdcSink):
 
         self.client = StreamingIngestClient(
             client_name="cascade_cdc_journal",
-            db_name=CDC_DB,
-            schema_name=CDC_SCHEMA,
+            db_name=JOURNAL_DB,
+            schema_name=JOURNAL_SCHEMA,
             pipe_name=f"{JOURNAL_TABLE}-STREAMING",
             profile_json=profile_path,
         )
@@ -484,8 +484,8 @@ class JournalSink(CdcSink):
                 password=profile["personal_access_token"],
                 role="ACCOUNTADMIN",
                 warehouse="HOL_WH",
-                database=CDC_DB,
-                schema=CDC_SCHEMA,
+                database=JOURNAL_DB,
+                schema=JOURNAL_SCHEMA,
                 client_session_keep_alive=True,
                 session_parameters={"QUERY_TAG": MERGE_QUERY_TAG},
             )
@@ -495,7 +495,7 @@ class JournalSink(CdcSink):
         self.channel.append_row(ev, offset_token=str(lsn))
 
     def emit_insert(self, row: dict[str, Any], msn: int, lsn: int) -> None:
-        self._send(journal_event(row["SCAN_ID"], EV_INSERT, row, msn, lsn), lsn)
+        self._send(journal_event(row["INSPECTION_ID"], EV_INSERT, row, msn, lsn), lsn)
 
     def emit_update(self, old_key: str, new_row: dict[str, Any], msn: int, lsn: int) -> None:
         self._send(journal_event(old_key, EV_UPDATE, new_row, msn, lsn), lsn)
@@ -538,7 +538,7 @@ class JournalSink(CdcSink):
 
 INSERT_SQL = f"""
 INSERT INTO {SCANS_TABLE}
-  (SCAN_ID, FRAME_ID, LINE, SKU, STATUS, DEFECT_CODE, STATION_ID, OPERATOR_ID,
+  (INSPECTION_ID, UNIT_ID, LINE, SKU, STATUS, DEFECT_CODE, STATION_ID, OPERATOR_ID,
    EVENT_TS, UPDATED_TS, _SNOWFLAKE_INSERTED_AT, _SNOWFLAKE_UPDATED_AT, _SNOWFLAKE_DELETED)
 VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
 """
@@ -546,13 +546,13 @@ VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
 UPDATE_SQL = f"""
 UPDATE {SCANS_TABLE}
    SET STATUS = %s, DEFECT_CODE = %s, UPDATED_TS = %s, _SNOWFLAKE_UPDATED_AT = %s
- WHERE SCAN_ID = %s AND _SNOWFLAKE_DELETED = FALSE
+ WHERE INSPECTION_ID = %s AND _SNOWFLAKE_DELETED = FALSE
 """
 
 VOID_SQL = f"""
 UPDATE {SCANS_TABLE}
    SET _SNOWFLAKE_DELETED = TRUE, _SNOWFLAKE_UPDATED_AT = %s
- WHERE SCAN_ID = %s
+ WHERE INSPECTION_ID = %s
 """
 
 
@@ -573,8 +573,8 @@ class DirectDmlSink(CdcSink):
             password=profile["personal_access_token"],
             role="ACCOUNTADMIN",
             warehouse="HOL_WH",
-            database=CDC_DB,
-            schema=CDC_SCHEMA,
+            database=JOURNAL_DB,
+            schema=JOURNAL_SCHEMA,
             client_session_keep_alive=True,
         )
         self.lock = threading.Lock()
@@ -584,8 +584,8 @@ class DirectDmlSink(CdcSink):
         now = utcnow()
         self.pending.append(
             (
-                row["SCAN_ID"],
-                row["FRAME_ID"],
+                row["INSPECTION_ID"],
+                row["UNIT_ID"],
                 row["LINE"],
                 row["SKU"],
                 row["STATUS"],
@@ -651,7 +651,7 @@ class DryRunCdcSink(CdcSink):
 
     def emit_insert(self, row: dict[str, Any], msn: int, lsn: int) -> None:
         self._out(
-            journal_event(row["SCAN_ID"], EV_INSERT, row, msn, lsn)
+            journal_event(row["INSPECTION_ID"], EV_INSERT, row, msn, lsn)
             if self.mode == "journal"
             else {"op": "INSERT", **row}
         )
@@ -667,7 +667,7 @@ class DryRunCdcSink(CdcSink):
         self._out(
             journal_event(key, EV_DELETE, None, msn, lsn)
             if self.mode == "journal"
-            else {"op": "DELETE(soft)", "SCAN_ID": key}
+            else {"op": "DELETE(soft)", "INSPECTION_ID": key}
         )
 
 
@@ -935,7 +935,7 @@ def main() -> None:
         f"scans/s={args.rate} telem/s={args.telemetry_rate}"
     )
     if args.cdc and args.cdc_mode == "journal" and not args.dry_run:
-        log(f"[cdc] journal: {CDC_DB}.{CDC_SCHEMA}.{JOURNAL_TABLE}")
+        log(f"[cdc] journal: {JOURNAL_DB}.{JOURNAL_SCHEMA}.{JOURNAL_TABLE}")
         if args.no_merge:
             log("[merge] DISABLED (--no-merge): the destination table will not change")
         else:

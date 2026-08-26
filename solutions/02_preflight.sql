@@ -27,26 +27,11 @@ SELECT CURRENT_REGION()                     AS region,
 SHOW PARAMETERS LIKE 'CORTEX_ENABLED_CROSS_REGION' IN ACCOUNT
   ->> SELECT "value" AS cross_region, "value" <> 'DISABLED' AS cortex_ok FROM $1;
 
--- 3. Managed Iceberg v3 really resolves in MFG.CDC.
+-- 3. Managed Iceberg v3 really resolves in MFG.RAW, where both feeds land.
 --    The CREATE deliberately specifies no catalog, volume, or version -- that is
 --    the point. The VARIANT column is the actual test: v2 rejects VARIANT
 --    outright, so if this statement succeeds AND reports version 3, the whole
 --    inheritance chain is working.
-USE SCHEMA MFG.CDC;
-CREATE OR REPLACE ICEBERG TABLE MFG.CDC._PREFLIGHT (N NUMBER(38,0), M VARIANT);
-
-SHOW ICEBERG TABLES LIKE '_PREFLIGHT' IN SCHEMA MFG.CDC
-  ->> SELECT 'MFG.CDC'                        AS schema_,
-             "external_volume_name"           AS volume,
-             "iceberg_table_type"             AS kind,
-             "iceberg_table_format_version"   AS format_version,
-             "external_volume_name" = 'SNOWFLAKE_MANAGED'
-               AND "iceberg_table_format_version" = 3 AS cdc_iceberg_ok
-      FROM $1;
-
-DROP TABLE MFG.CDC._PREFLIGHT;
-
--- 4. Same again in MFG.RAW, where the telemetry table lives.
 USE SCHEMA MFG.RAW;
 CREATE OR REPLACE ICEBERG TABLE MFG.RAW._PREFLIGHT (N NUMBER(38,0), M VARIANT);
 
@@ -61,7 +46,27 @@ SHOW ICEBERG TABLES LIKE '_PREFLIGHT' IN SCHEMA MFG.RAW
 
 DROP TABLE MFG.RAW._PREFLIGHT;
 
-USE SCHEMA MFG.CDC;
+-- 4. Same again in MFG.ANALYTICS. Easy to think this one does not matter,
+--    because you create no plain Iceberg table there -- but every Dynamic Table
+--    you are about to build in it is a Dynamic ICEBERG Table, and
+--    CREATE DYNAMIC ICEBERG TABLE has no ICEBERG_VERSION clause to override
+--    with. If this check is FALSE, the whole Gold layer lands on v2 in Part 3
+--    and TIME_SLICE()'s TIMESTAMP_NTZ(9) is rejected with no hint of the cause.
+USE SCHEMA MFG.ANALYTICS;
+CREATE OR REPLACE ICEBERG TABLE MFG.ANALYTICS._PREFLIGHT (N NUMBER(38,0), M VARIANT);
+
+SHOW ICEBERG TABLES LIKE '_PREFLIGHT' IN SCHEMA MFG.ANALYTICS
+  ->> SELECT 'MFG.ANALYTICS'                  AS schema_,
+             "external_volume_name"           AS volume,
+             "iceberg_table_type"             AS kind,
+             "iceberg_table_format_version"   AS format_version,
+             "external_volume_name" = 'SNOWFLAKE_MANAGED'
+               AND "iceberg_table_format_version" = 3 AS analytics_iceberg_ok
+      FROM $1;
+
+DROP TABLE MFG.ANALYTICS._PREFLIGHT;
+
+USE SCHEMA MFG.RAW;
 
 -- Belt and braces: confirm the tables you already built are actually v3.
 -- If STATION_TELEMETRY came out v2, recreate it -- Iceberg has no in-place
@@ -72,7 +77,7 @@ SHOW ICEBERG TABLES IN DATABASE MFG
       FROM $1 ORDER BY "name";
 
 -- =====================================================================
--- aws_ok, cortex_ok, cdc_iceberg_ok and raw_iceberg_ok must ALL be TRUE,
+-- aws_ok, cortex_ok, raw_iceberg_ok and analytics_iceberg_ok must ALL be TRUE,
 -- and every row of the last query must show is_v3 = TRUE.
 --
 -- If either *_iceberg_ok is FALSE, or a CREATE failed with

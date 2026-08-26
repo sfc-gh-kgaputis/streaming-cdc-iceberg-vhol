@@ -13,9 +13,9 @@
 --   EXTERNAL_VOLUME and CATALOG resolve from the schema that CONTAINS the new
 --   table. ICEBERG_VERSION_DEFAULT resolves from the SESSION'S CURRENT SCHEMA.
 --
--- So `CREATE ICEBERG TABLE MFG.CDC.T (...)` run without `USE SCHEMA MFG.CDC`
+-- So `CREATE ICEBERG TABLE MFG.RAW.T (...)` run without `USE SCHEMA MFG.RAW`
 -- first gets the right volume and catalog but lands on **version 2**, even
--- though MFG.CDC has the version default set. SHOW PARAMETERS will cheerfully
+-- though MFG.RAW has the version default set. SHOW PARAMETERS will cheerfully
 -- report `value = 3, level = SCHEMA` the whole time. It is set, reported, and
 -- ignored.
 --
@@ -34,22 +34,25 @@
 USE ROLE ACCOUNTADMIN;
 
 CREATE DATABASE IF NOT EXISTS MFG;
-CREATE SCHEMA   IF NOT EXISTS MFG.CDC;   -- CDC destination + the pipeline
-CREATE SCHEMA   IF NOT EXISTS MFG.RAW;   -- streaming telemetry landing zone
+CREATE SCHEMA   IF NOT EXISTS MFG.RAW;        -- both landing zones: CDC destination, its journal, telemetry
+CREATE SCHEMA   IF NOT EXISTS MFG.ANALYTICS;  -- everything derived: the Dynamic Tables, semantic view, agent
 
 -- Layer 2: database level. Any session whose current schema is anywhere inside
--- MFG now inherits v3, which covers the case where you are in MFG.RAW and
--- create something in MFG.CDC.
+-- MFG now inherits v3, which covers the case where you are in MFG.ANALYTICS and
+-- create something in MFG.RAW.
 ALTER DATABASE MFG SET ICEBERG_VERSION_DEFAULT = 3;
 
 -- Storage defaults. Do this BEFORE creating any table.
-ALTER SCHEMA MFG.CDC SET EXTERNAL_VOLUME = 'SNOWFLAKE_MANAGED';
-ALTER SCHEMA MFG.CDC SET CATALOG = 'SNOWFLAKE';
-ALTER SCHEMA MFG.CDC SET ICEBERG_VERSION_DEFAULT = 3;
-
 ALTER SCHEMA MFG.RAW SET EXTERNAL_VOLUME = 'SNOWFLAKE_MANAGED';
 ALTER SCHEMA MFG.RAW SET CATALOG = 'SNOWFLAKE';
 ALTER SCHEMA MFG.RAW SET ICEBERG_VERSION_DEFAULT = 3;
+
+-- ANALYTICS needs these too, and it is easy to think it does not: every object
+-- in it is a Dynamic ICEBERG Table, and CREATE DYNAMIC ICEBERG TABLE has no
+-- ICEBERG_VERSION clause at all. It inherits or it is wrong.
+ALTER SCHEMA MFG.ANALYTICS SET EXTERNAL_VOLUME = 'SNOWFLAKE_MANAGED';
+ALTER SCHEMA MFG.ANALYTICS SET CATALOG = 'SNOWFLAKE';
+ALTER SCHEMA MFG.ANALYTICS SET ICEBERG_VERSION_DEFAULT = 3;
 
 CREATE WAREHOUSE IF NOT EXISTS HOL_WH
   WAREHOUSE_SIZE = 'XSMALL'
@@ -59,7 +62,7 @@ CREATE WAREHOUSE IF NOT EXISTS HOL_WH
   INITIALLY_SUSPENDED = TRUE;
 
 USE WAREHOUSE HOL_WH;
-USE SCHEMA MFG.CDC;
+USE SCHEMA MFG.RAW;
 
 -- ---------------------------------------------------------------------
 -- The CDC destination table.
@@ -70,9 +73,9 @@ USE SCHEMA MFG.CDC;
 -- _SNOWFLAKE_DELETED is a SOFT delete -- the connector never removes rows,
 -- it flags them, so history survives. Filtering it is your job downstream.
 -- ---------------------------------------------------------------------
-CREATE OR REPLACE TABLE MFG.CDC.PRODUCTION_SCANS (
-  SCAN_ID                 STRING,          -- replication key (the Postgres PK)
-  FRAME_ID                STRING,          -- 'F-000123'
+CREATE OR REPLACE TABLE MFG.RAW.QUALITY_INSPECTIONS (
+  INSPECTION_ID           STRING,          -- replication key (the Postgres PK)
+  UNIT_ID                 STRING,          -- 'F-000123'
   LINE                    STRING,          -- WELD | PAINT | ASSEMBLY
   SKU                     STRING,
   STATUS                  STRING,          -- PASS | FAIL
@@ -108,4 +111,4 @@ CREATE OR REPLACE ICEBERG TABLE MFG.RAW.STATION_TELEMETRY (
   EVENT_TS    TIMESTAMP_NTZ
 );
 
-USE SCHEMA MFG.CDC;
+USE SCHEMA MFG.RAW;

@@ -4,7 +4,7 @@ Read a Snowflake-managed Iceberg table from OUTSIDE Snowflake.
 Uses PyIceberg against the Horizon Catalog REST endpoint with vended credentials.
 
 Usage:  python external/read_iceberg.py [NAMESPACE.TABLE]
-Default table: CDC.DT_YIELD_BY_LINE_5MIN   (database: MFG)
+Default table: CDC.YIELD_BY_LINE_5MIN   (database: MFG)
 Config: producer/profile.json + secret.pat (or env HORIZON_PAT)
 """
 import json
@@ -57,7 +57,7 @@ except urllib.error.HTTPError as e:
     if e.code == 401:
         sys.exit(
             "ERROR: 401 from Horizon. Check that the PAT is current and that "
-            "VHOLuser has a network policy set (see 00_bootstrap.sql)."
+            "HOL_USER has a network policy set (see 00_bootstrap.sql)."
         )
     sys.exit(f"ERROR: HTTP {e.code} from token endpoint.")
 
@@ -74,7 +74,7 @@ catalog = RestCatalog(
     **{"header.X-Iceberg-Access-Delegation": "vended-credentials"},
 )
 
-table_ref = (sys.argv[1] if len(sys.argv) > 1 else "CDC.DT_YIELD_BY_LINE_5MIN").upper()
+table_ref = (sys.argv[1] if len(sys.argv) > 1 else "ANALYTICS.YIELD_BY_LINE_5MIN").upper()
 try:
     tbl = catalog.load_table(table_ref)
 except Exception as e:

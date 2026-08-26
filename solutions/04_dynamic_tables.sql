@@ -6,18 +6,18 @@
 -- the whole table, even though the CDC source underneath is being UPDATEd
 -- and DELETEd continuously.
 --
---   PRODUCTION_SCANS (standard, mutating)   STATION_TELEMETRY (Iceberg, append)
+--   QUALITY_INSPECTIONS (standard, mutating)   STATION_TELEMETRY (Iceberg, append)
 --             |                                          |
 --             v                                          v
---     DT_SCANS_ACTIVE                          DT_STATION_HEALTH
+--     INSPECTIONS_ACTIVE                          STATION_HEALTH
 --     (soft deletes filtered)                  (5-min metric rollup)
 --             |                                          |
 --             +---------------------+--------------------+
 --                                   v
---                      DT_YIELD_BY_LINE_5MIN     <- the two-source join
+--                      YIELD_BY_LINE_5MIN     <- the two-source join
 --                                   |
 --                                   v
---                      DT_DEFECT_COUNTS_5MIN
+--                      DEFECT_COUNTS_5MIN
 --
 -- THINGS THAT WILL COST YOU TIME, all of them measured on a real account:
 --
@@ -41,7 +41,7 @@
 
 USE ROLE ACCOUNTADMIN;
 USE WAREHOUSE HOL_WH;
-USE SCHEMA MFG.CDC;
+USE SCHEMA MFG.ANALYTICS;
 
 -- ---------------------------------------------------------------------
 -- Layer 1a: the soft-delete filter.
@@ -51,22 +51,22 @@ USE SCHEMA MFG.CDC;
 -- keep counting against yield forever. This one predicate is the difference
 -- between a correct CDC pipeline and a plausible-looking wrong one.
 -- ---------------------------------------------------------------------
-CREATE OR REPLACE DYNAMIC ICEBERG TABLE MFG.CDC.DT_SCANS_ACTIVE
+CREATE OR REPLACE DYNAMIC ICEBERG TABLE MFG.ANALYTICS.INSPECTIONS_ACTIVE
   TARGET_LAG = '1 minute'
   WAREHOUSE = HOL_WH
   REFRESH_MODE = INCREMENTAL
 AS
-SELECT SCAN_ID, FRAME_ID, LINE, SKU, STATUS, DEFECT_CODE, STATION_ID, OPERATOR_ID,
+SELECT INSPECTION_ID, UNIT_ID, LINE, SKU, STATUS, DEFECT_CODE, STATION_ID, OPERATOR_ID,
        EVENT_TS, UPDATED_TS,
        IFF(STATUS = 'FAIL', 1, 0) AS IS_SCRAP
-FROM MFG.CDC.PRODUCTION_SCANS
+FROM MFG.RAW.QUALITY_INSPECTIONS
 WHERE NOT _SNOWFLAKE_DELETED;
 
 -- ---------------------------------------------------------------------
 -- Layer 1b: telemetry rolled up to the SAME 5-minute grain as yield, which
 -- is what makes the join in the next layer possible.
 -- ---------------------------------------------------------------------
-CREATE OR REPLACE DYNAMIC ICEBERG TABLE MFG.CDC.DT_STATION_HEALTH
+CREATE OR REPLACE DYNAMIC ICEBERG TABLE MFG.ANALYTICS.STATION_HEALTH
   TARGET_LAG = '1 minute'
   WAREHOUSE = HOL_WH
   REFRESH_MODE = INCREMENTAL
@@ -90,7 +90,7 @@ GROUP BY 1, 2, 3, 4;
 -- booth humidity is a paint-booth metric. The LEFT JOIN keeps those lines
 -- in the result instead of dropping them.
 -- ---------------------------------------------------------------------
-CREATE OR REPLACE DYNAMIC ICEBERG TABLE MFG.CDC.DT_YIELD_BY_LINE_5MIN
+CREATE OR REPLACE DYNAMIC ICEBERG TABLE MFG.ANALYTICS.YIELD_BY_LINE_5MIN
   TARGET_LAG = '1 minute'
   WAREHOUSE = HOL_WH
   REFRESH_MODE = INCREMENTAL
@@ -101,8 +101,8 @@ SELECT s.LINE,
        SUM(s.IS_SCRAP)                                         AS SCRAP_UNITS,
        ROUND(100 * (COUNT(*) - SUM(s.IS_SCRAP)) / COUNT(*), 2) AS FIRST_PASS_YIELD_PCT,
        AVG(h.AVG_VALUE)                                        AS AVG_BOOTH_HUMIDITY
-FROM MFG.CDC.DT_SCANS_ACTIVE s
-LEFT JOIN MFG.CDC.DT_STATION_HEALTH h
+FROM MFG.ANALYTICS.INSPECTIONS_ACTIVE s
+LEFT JOIN MFG.ANALYTICS.STATION_HEALTH h
        ON h.LINE   = s.LINE
       AND h.METRIC = 'booth_humidity'
       AND h.BUCKET = TIME_SLICE(s.EVENT_TS, 5, 'MINUTE')::TIMESTAMP_NTZ(6)
@@ -116,7 +116,7 @@ GROUP BY 1, 2;
 -- (line, bucket, defect_code) and ranking at read time is both legal and
 -- more useful, because it keeps the full distribution.
 -- ---------------------------------------------------------------------
-CREATE OR REPLACE DYNAMIC ICEBERG TABLE MFG.CDC.DT_DEFECT_COUNTS_5MIN
+CREATE OR REPLACE DYNAMIC ICEBERG TABLE MFG.ANALYTICS.DEFECT_COUNTS_5MIN
   TARGET_LAG = '1 minute'
   WAREHOUSE = HOL_WH
   REFRESH_MODE = INCREMENTAL
@@ -125,7 +125,7 @@ SELECT LINE,
        TIME_SLICE(EVENT_TS, 5, 'MINUTE')::TIMESTAMP_NTZ(6) AS BUCKET,
        COALESCE(DEFECT_CODE, 'NONE')                       AS DEFECT_CODE,
        COUNT(*)                                            AS N
-FROM MFG.CDC.DT_SCANS_ACTIVE
+FROM MFG.ANALYTICS.INSPECTIONS_ACTIVE
 GROUP BY 1, 2, 3;
 
 
@@ -136,7 +136,7 @@ GROUP BY 1, 2, 3;
 -- Every row must read INCREMENTAL / true, and DOWNGRADE_REASON must be empty.
 -- If refresh_mode came back FULL, something in the query blocked incremental
 -- refresh and refresh_mode_reason will say what.
-SHOW DYNAMIC TABLES IN SCHEMA MFG.CDC
+SHOW DYNAMIC TABLES IN SCHEMA MFG.ANALYTICS
   ->> SELECT "name", "refresh_mode", "is_iceberg", "target_lag", "scheduling_state",
              NULLIF("refresh_mode_reason", '') AS downgrade_reason
       FROM $1 ORDER BY "name";
@@ -145,13 +145,13 @@ SHOW DYNAMIC TABLES IN SCHEMA MFG.CDC
 -- below the other two lines and AVG_BOOTH_HUMIDITY climbs in the same bucket.
 SELECT LINE, BUCKET, UNITS, SCRAP_UNITS, FIRST_PASS_YIELD_PCT,
        ROUND(AVG_BOOTH_HUMIDITY, 1) AS HUMIDITY
-FROM MFG.CDC.DT_YIELD_BY_LINE_5MIN
+FROM MFG.ANALYTICS.YIELD_BY_LINE_5MIN
 ORDER BY BUCKET DESC, LINE
 LIMIT 12;
 
 -- Top defect, derived at read time (the MODE() replacement).
 SELECT LINE, DEFECT_CODE, SUM(N) AS N
-FROM MFG.CDC.DT_DEFECT_COUNTS_5MIN
+FROM MFG.ANALYTICS.DEFECT_COUNTS_5MIN
 WHERE DEFECT_CODE <> 'NONE'
   AND BUCKET >= DATEADD('minute', -15, CURRENT_TIMESTAMP())
 GROUP BY 1, 2
@@ -164,7 +164,7 @@ LIMIT 5;
 -- table grows, because only the changed 5-minute groups are recomputed.
 SELECT NAME, REFRESH_START_TIME, REFRESH_ACTION, STATE, STATISTICS
 FROM TABLE(INFORMATION_SCHEMA.DYNAMIC_TABLE_REFRESH_HISTORY(
-        NAME_PREFIX => 'MFG.CDC.DT_'))
+        NAME_PREFIX => 'MFG.ANALYTICS.'))
 ORDER BY REFRESH_START_TIME DESC
 LIMIT 10;
 
@@ -175,13 +175,13 @@ LIMIT 10;
 -- This is a real, instructive failure, not a contrived one. It is the first
 -- thing most people reach for.
 --
--- CREATE OR REPLACE DYNAMIC ICEBERG TABLE MFG.CDC.DT_TOP_DEFECT_BROKEN
+-- CREATE OR REPLACE DYNAMIC ICEBERG TABLE MFG.ANALYTICS.TOP_DEFECT_BROKEN
 --   TARGET_LAG = '1 minute' WAREHOUSE = HOL_WH REFRESH_MODE = INCREMENTAL
 -- AS
 -- SELECT LINE,
 --        TIME_SLICE(EVENT_TS, 5, 'MINUTE')::TIMESTAMP_NTZ(6) AS BUCKET,
 --        MODE(DEFECT_CODE) AS TOP_DEFECT
--- FROM MFG.CDC.DT_SCANS_ACTIVE
+-- FROM MFG.ANALYTICS.INSPECTIONS_ACTIVE
 -- GROUP BY 1, 2;
 --
 -- Expected:
