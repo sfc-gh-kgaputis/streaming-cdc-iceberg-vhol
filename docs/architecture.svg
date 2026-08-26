@@ -1,6 +1,6 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1180 520" width="1180" height="520" role="img" aria-labelledby="diagramTitle diagramDesc" font-family="Inter, Helvetica, Arial, sans-serif">
-  <title id="diagramTitle">Cascade Cycleworks real-time pipeline: CDC and streaming telemetry into Apache Iceberg, refined by Dynamic Tables, served to an agent and to external engines</title>
-  <desc id="diagramDesc">Two source feeds flow left to right through four stages. Stage one, sources: a Postgres MES database of frame scans, and station sensors emitting telemetry. Stage two, landing in Snowflake-managed Apache Iceberg v3: the simulated Openflow Postgres CDC connector appends change events to the QUALITY_INSPECTIONS_JOURNAL Iceberg table over Snowpipe Streaming, an APPEND_ONLY stream feeds a MERGE issued by the connector itself on a thirty-second gate, and that MERGE maintains the QUALITY_INSPECTIONS destination table using soft deletes; in parallel, station telemetry streams directly into the STATION_TELEMETRY Iceberg table. Stage three, refinement by four Dynamic Iceberg Tables: INSPECTIONS_ACTIVE filters soft-deleted rows out of QUALITY_INSPECTIONS and STATION_HEALTH rolls up STATION_TELEMETRY, then YIELD_BY_LINE_5MIN joins those two on line and five-minute bucket while DEFECT_COUNTS_5MIN counts defects at their natural grain. All four refresh incrementally with a one-minute target lag. Stage four, serving: the semantic view PLANT_FLOOR_SV sits over the two gold tables, the Cascade Plant Analyst Cortex Agent answers plain-language questions through that semantic view, and PyIceberg reads the same gold tables from a laptop through the Horizon Catalog with vended credentials, bypassing Snowflake compute entirely.</desc>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 556" width="1200" height="556" role="img" aria-labelledby="diagramTitle diagramDesc" font-family="Inter, Helvetica, Arial, sans-serif">
+  <title id="diagramTitle">Cascade Cycleworks real-time pipeline: CDC and streaming telemetry into Apache Iceberg, refined by Dynamic Tables, served to an agent and read from outside Snowflake</title>
+  <desc id="diagramDesc">Two source feeds flow left to right through four stages, and both arrive over Snowpipe Streaming. Stage one, sources: station sensors emitting telemetry, and a Postgres MES database of frame scans. Stage two, landing in Snowflake-managed Apache Iceberg v3: station telemetry streams straight into the STATION_TELEMETRY Iceberg table; in parallel, the simulated Openflow Postgres CDC connector appends change events to the QUALITY_INSPECTIONS_JOURNAL Iceberg table, an APPEND_ONLY stream on that journal feeds a MERGE the connector issues itself on a thirty-second gate, and that MERGE maintains the QUALITY_INSPECTIONS destination table using soft deletes. The destination is a standard table, not Iceberg, because it takes continuous updates and deletes. Stage three, refinement by four Dynamic Iceberg Tables, all INCREMENTAL with a one-minute target lag: STATION_HEALTH rolls telemetry up per station and five-minute bucket, INSPECTIONS_ACTIVE filters soft-deleted rows out of QUALITY_INSPECTIONS, then YIELD_BY_LINE_5MIN joins those two on line and five-minute bucket while DEFECT_COUNTS_5MIN counts defects at their natural grain. Stage four, serving: the semantic view PLANT_FLOOR_SV sits over three tables, YIELD_BY_LINE_5MIN, DEFECT_COUNTS_5MIN and STATION_HEALTH, so STATION_HEALTH reaches the view directly as well as through the join; the Cascade Plant Analyst Cortex Agent answers plain-language questions through that semantic view. Outside Snowflake entirely, PyIceberg on a laptop reads the same gold Iceberg tables through the Horizon Catalog with vended credentials, using no warehouse.</desc>
 
   <defs>
     <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
@@ -14,12 +14,13 @@
   <style>
     .band      { fill: #f6f8fa; stroke: #e2e6ea; stroke-width: 1; rx: 10; }
     .bandLabel { font-size: 12px; font-weight: 700; fill: #6a7480; letter-spacing: .09em; }
+    .bandSub   { font-size: 10px; fill: #8b949e; }
     .src       { fill: #eef1f4; stroke: #b9c1cb; stroke-width: 1.5; rx: 8; }
     .ice       { fill: #e6f3fb; stroke: #29b5e8; stroke-width: 1.5; rx: 8; }
     .std       { fill: #f1f0f6; stroke: #9b93b8; stroke-width: 1.5; rx: 8; }
     .dt        { fill: #e6f6ef; stroke: #2eab6f; stroke-width: 1.5; rx: 8; }
     .serve     { fill: #fdf0e6; stroke: #e8883a; stroke-width: 1.5; rx: 8; }
-    .name      { font-size: 12.5px; font-weight: 600; fill: #16202b; }
+    .name      { font-size: 11.5px; font-weight: 600; fill: #16202b; }
     .sub       { font-size: 10.5px; fill: #5b6472; }
     .edge      { stroke: #5b6472; stroke-width: 1.6; fill: none; marker-end: url(#arrow); }
     .edgeSoft  { stroke: #9aa4b2; stroke-width: 1.4; fill: none; stroke-dasharray: 4 3; marker-end: url(#arrowLight); }
@@ -28,122 +29,125 @@
   </style>
 
   <!-- ── stage bands ───────────────────────────────────────────── -->
-  <rect class="band" x="16"  y="52" width="196" height="330"/>
-  <rect class="band" x="228" y="52" width="316" height="330"/>
-  <rect class="band" x="560" y="52" width="286" height="330"/>
-  <rect class="band" x="862" y="52" width="302" height="330"/>
+  <rect class="band" x="16"  y="58" width="156" height="332"/>
+  <rect class="band" x="184" y="58" width="308" height="332"/>
+  <rect class="band" x="504" y="58" width="392" height="332"/>
+  <rect class="band" x="908" y="58" width="276" height="332"/>
 
-  <text class="bandLabel" x="114"  y="40" text-anchor="middle">SOURCES</text>
-  <text class="bandLabel" x="386"  y="40" text-anchor="middle">LAND IN ICEBERG v3</text>
-  <text class="bandLabel" x="703"  y="40" text-anchor="middle">REFINE INCREMENTALLY</text>
-  <text class="bandLabel" x="1013" y="40" text-anchor="middle">SERVE</text>
+  <text class="bandLabel" x="94"   y="44" text-anchor="middle">SOURCES</text>
+  <text class="bandLabel" x="338"  y="44" text-anchor="middle">LAND IN ICEBERG v3</text>
+  <text class="bandLabel" x="700"  y="44" text-anchor="middle">REFINE INCREMENTALLY</text>
+  <text class="bandLabel" x="1046" y="44" text-anchor="middle">SERVE</text>
+
+  <text class="bandSub" x="338" y="80" text-anchor="middle">both feeds arrive over Snowpipe Streaming</text>
+  <text class="bandSub" x="700" y="80" text-anchor="middle">all four Dynamic Tables: INCREMENTAL · TARGET_LAG 1 minute</text>
 
   <!-- ── sources ───────────────────────────────────────────────── -->
-  <rect class="src" x="36" y="96" width="156" height="54"/>
-  <text class="name" x="114" y="118" text-anchor="middle">Postgres MES</text>
-  <text class="sub"  x="114" y="136" text-anchor="middle">frame scans: PASS / FAIL</text>
+  <rect class="src" x="26" y="104" width="136" height="54"/>
+  <text class="name" x="94" y="126" text-anchor="middle">Station sensors</text>
+  <text class="sub"  x="94" y="143" text-anchor="middle">~60 rows/sec</text>
 
-  <rect class="src" x="36" y="286" width="156" height="54"/>
-  <text class="name" x="114" y="308" text-anchor="middle">Station sensors</text>
-  <text class="sub"  x="114" y="326" text-anchor="middle">~60 rows/sec</text>
+  <rect class="src" x="26" y="208" width="136" height="54"/>
+  <text class="name" x="94" y="230" text-anchor="middle">Postgres MES</text>
+  <text class="sub"  x="94" y="247" text-anchor="middle">frame scans: PASS / FAIL</text>
 
-  <!-- ── landing: journal -> merge -> destination ──────────────── -->
-  <rect class="ice" x="252" y="88" width="176" height="60"/>
-  <text class="name" x="340" y="110" text-anchor="middle">QUALITY_INSPECTIONS</text>
-  <text class="name" x="340" y="126" text-anchor="middle">_JOURNAL</text>
-  <text class="sub"  x="340" y="142" text-anchor="middle">Iceberg v3 · append-only stream</text>
+  <!-- ── landing ───────────────────────────────────────────────── -->
+  <rect class="ice" x="248" y="104" width="180" height="54"/>
+  <text class="name" x="338" y="126" text-anchor="middle">STATION_TELEMETRY</text>
+  <text class="sub"  x="338" y="143" text-anchor="middle">Iceberg v3</text>
 
-  <rect class="std" x="252" y="192" width="176" height="54"/>
-  <text class="name" x="340" y="214" text-anchor="middle">QUALITY_INSPECTIONS</text>
-  <text class="sub"  x="340" y="232" text-anchor="middle">standard table · soft deletes</text>
+  <rect class="ice" x="248" y="208" width="180" height="62"/>
+  <text class="name" x="338" y="228" text-anchor="middle">QUALITY_INSPECTIONS</text>
+  <text class="name" x="338" y="243" text-anchor="middle">_JOURNAL</text>
+  <text class="sub"  x="338" y="259" text-anchor="middle">Iceberg v3 · APPEND_ONLY stream</text>
 
-  <rect class="ice" x="252" y="286" width="176" height="54"/>
-  <text class="name" x="340" y="308" text-anchor="middle">STATION_TELEMETRY</text>
-  <text class="sub"  x="340" y="326" text-anchor="middle">Iceberg v3</text>
+  <rect class="std" x="248" y="314" width="180" height="56"/>
+  <text class="name" x="338" y="337" text-anchor="middle">QUALITY_INSPECTIONS</text>
+  <text class="sub"  x="338" y="354" text-anchor="middle">standard table · soft deletes</text>
 
-  <!-- MERGE annotation between journal and destination -->
-  <path class="edge" d="M 340 148 L 340 190"/>
-  <text class="edgeLabel" x="350" y="166">MERGE, issued by the</text>
-  <text class="edgeLabel" x="350" y="178">connector on a 30 s gate</text>
+  <!-- MERGE, journal -> destination -->
+  <path class="edge" d="M 338 270 L 338 312"/>
+  <text class="edgeLabel" x="348" y="287">MERGE, issued by</text>
+  <text class="edgeLabel" x="348" y="299">the connector · 30 s gate</text>
 
-  <!-- source -> landing -->
-  <path class="edge" d="M 192 118 L 250 118"/>
-  <text class="edgeLabel" x="196" y="82">simulated Openflow</text>
-  <text class="edgeLabel" x="196" y="94">CDC connector</text>
+  <!-- sources -> landing -->
+  <path class="edge" d="M 162 131 L 246 131"/>
 
-  <path class="edge" d="M 192 313 L 250 313"/>
-  <text class="edgeLabel" x="196" y="356">Snowpipe Streaming</text>
+  <path class="edge" d="M 162 235 L 246 235"/>
+  <text class="edgeLabel" x="192" y="182">simulated Openflow</text>
+  <text class="edgeLabel" x="192" y="194">CDC connector</text>
 
-  <!-- ── refine: layer one ─────────────────────────────────────── -->
-  <rect class="dt" x="580" y="192" width="120" height="54"/>
-  <text class="name" x="640" y="214" text-anchor="middle">INSPECTIONS</text>
-  <text class="name" x="640" y="229" text-anchor="middle">_ACTIVE</text>
-  <text class="sub"  x="640" y="242" text-anchor="middle">drops deleted</text>
+  <!-- ── refine: silver ────────────────────────────────────────── -->
+  <rect class="dt" x="520" y="104" width="144" height="54"/>
+  <text class="name" x="592" y="126" text-anchor="middle">STATION_HEALTH</text>
+  <text class="sub"  x="592" y="143" text-anchor="middle">5-min rollup</text>
 
-  <rect class="dt" x="580" y="286" width="120" height="54"/>
-  <text class="name" x="640" y="308" text-anchor="middle">STATION</text>
-  <text class="name" x="640" y="323" text-anchor="middle">_HEALTH</text>
+  <rect class="dt" x="520" y="314" width="144" height="56"/>
+  <text class="name" x="592" y="337" text-anchor="middle">INSPECTIONS_ACTIVE</text>
+  <text class="sub"  x="592" y="354" text-anchor="middle">drops soft-deleted</text>
 
-  <!-- refine: gold -->
-  <rect class="dt" x="722" y="150" width="112" height="62"/>
-  <text class="name" x="778" y="172" text-anchor="middle">YIELD_BY</text>
-  <text class="name" x="778" y="187" text-anchor="middle">_LINE_5MIN</text>
-  <text class="sub"  x="778" y="202" text-anchor="middle">the join</text>
+  <!-- ── refine: gold ──────────────────────────────────────────── -->
+  <rect class="dt" x="726" y="186" width="144" height="64"/>
+  <text class="name" x="798" y="211" text-anchor="middle">YIELD_BY_LINE_5MIN</text>
+  <text class="sub"  x="798" y="228" text-anchor="middle">joins on line + bucket</text>
 
-  <rect class="dt" x="722" y="252" width="112" height="62"/>
-  <text class="name" x="778" y="274" text-anchor="middle">DEFECT</text>
-  <text class="name" x="778" y="289" text-anchor="middle">_COUNTS_5MIN</text>
-  <text class="sub"  x="778" y="304" text-anchor="middle">defect grain</text>
+  <rect class="dt" x="726" y="300" width="144" height="64"/>
+  <text class="name" x="798" y="325" text-anchor="middle">DEFECT_COUNTS_5MIN</text>
+  <text class="sub"  x="798" y="342" text-anchor="middle">defect grain</text>
 
-  <!-- landing -> layer one -->
-  <path class="edge" d="M 428 219 L 578 219"/>
-  <path class="edge" d="M 428 313 L 578 313"/>
+  <!-- landing -> refine -->
+  <path class="edge" d="M 428 131 L 518 131"/>
+  <path class="edge" d="M 428 342 L 518 342"/>
 
-  <!-- layer one -> gold: the join is two edges into YIELD_BY_LINE_5MIN -->
-  <path class="edge" d="M 700 210 C 712 200 712 190 720 181"/>
-  <path class="edge" d="M 700 300 C 712 260 706 200 720 190"/>
-  <path class="edge" d="M 700 232 C 712 250 710 268 720 279"/>
-  <text class="edgeLabel" x="640" y="270" text-anchor="middle">joined on line</text>
-  <text class="edgeLabel" x="640" y="282" text-anchor="middle">+ 5-min bucket</text>
-
-  <text class="sub" x="703" y="366" text-anchor="middle">all four: INCREMENTAL, TARGET_LAG 1 minute</text>
+  <!-- silver -> gold -->
+  <path class="edge" d="M 664 145 C 690 145 698 190 724 201"/>
+  <path class="edge" d="M 664 328 C 690 328 700 250 724 238"/>
+  <path class="edge" d="M 664 352 C 688 352 702 342 724 339"/>
 
   <!-- ── serve ─────────────────────────────────────────────────── -->
-  <rect class="serve" x="886" y="120" width="150" height="52"/>
-  <text class="name" x="961" y="142" text-anchor="middle">PLANT_FLOOR_SV</text>
-  <text class="sub"  x="961" y="159" text-anchor="middle">semantic view</text>
+  <rect class="serve" x="952" y="190" width="176" height="56"/>
+  <text class="name" x="1040" y="213" text-anchor="middle">PLANT_FLOOR_SV</text>
+  <text class="sub"  x="1040" y="230" text-anchor="middle">semantic view over all three</text>
 
-  <rect class="serve" x="886" y="206" width="150" height="52"/>
-  <text class="name" x="961" y="228" text-anchor="middle">Cascade Plant Analyst</text>
-  <text class="sub"  x="961" y="245" text-anchor="middle">Cortex Agent</text>
+  <rect class="serve" x="952" y="290" width="176" height="56"/>
+  <text class="name" x="1040" y="313" text-anchor="middle">Cascade Plant Analyst</text>
+  <text class="sub"  x="1040" y="330" text-anchor="middle">Cortex Agent</text>
 
-  <rect class="serve" x="886" y="298" width="150" height="52"/>
-  <text class="name" x="961" y="320" text-anchor="middle">PyIceberg</text>
-  <text class="sub"  x="961" y="337" text-anchor="middle">on your laptop</text>
+  <!-- gold -> semantic view -->
+  <path class="edge" d="M 870 226 C 900 226 920 218 950 212"/>
+  <path class="edge" d="M 870 318 C 902 318 918 258 950 236"/>
 
-  <path class="edge" d="M 834 172 C 856 160 864 150 884 146"/>
-  <path class="edge" d="M 834 278 C 856 250 864 240 884 232"/>
-  <path class="edge" d="M 961 172 L 961 204"/>
+  <!-- STATION_HEALTH feeds the view directly as well as the join -->
+  <path class="edge" d="M 664 122 C 780 116 940 130 988 186"/>
+  <text class="edgeLabel" x="796" y="112" text-anchor="middle">stations, straight to the view</text>
 
-  <!-- gold -> pyiceberg, dashed: bypasses Snowflake compute -->
-  <path class="edgeSoft" d="M 778 314 C 778 350 850 352 884 330"/>
-  <text class="edgeLabel" x="856" y="368" text-anchor="middle">Horizon Catalog · vended credentials · no warehouse</text>
+  <!-- semantic view -> agent -->
+  <path class="edge" d="M 1040 246 L 1040 288"/>
+
+  <!-- ── outside Snowflake ─────────────────────────────────────── -->
+  <rect class="src" x="1000" y="436" width="176" height="54"/>
+  <text class="name" x="1088" y="458" text-anchor="middle">PyIceberg</text>
+  <text class="sub"  x="1088" y="475" text-anchor="middle">on your laptop · no warehouse</text>
+
+  <path class="edgeSoft" d="M 820 364 C 820 440 900 470 996 463"/>
+  <text class="edgeLabel" x="524" y="418">Horizon Catalog · vended credentials</text>
+  <text class="edgeLabel" x="524" y="430">the same Parquet files, no Snowflake compute</text>
 
   <!-- ── legend ────────────────────────────────────────────────── -->
-  <rect class="ice"   x="20"  y="452" width="14" height="14"/>
-  <text class="legend" x="42"  y="464">Iceberg v3, Snowflake-managed</text>
+  <text class="legend" x="20" y="508">Only the connector is simulated. Everything downstream is what you would build for real.</text>
 
-  <rect class="std"   x="238" y="452" width="14" height="14"/>
-  <text class="legend" x="260" y="464">standard table</text>
+  <rect class="ice"   x="20"  y="525" width="14" height="14"/>
+  <text class="legend" x="42"  y="536">Iceberg v3, Snowflake-managed</text>
 
-  <rect class="dt"    x="366" y="452" width="14" height="14"/>
-  <text class="legend" x="388" y="464">Dynamic Iceberg Table</text>
+  <rect class="std"   x="216" y="525" width="14" height="14"/>
+  <text class="legend" x="238" y="536">standard table</text>
 
-  <rect class="serve" x="546" y="452" width="14" height="14"/>
-  <text class="legend" x="568" y="464">serving layer</text>
+  <rect class="dt"    x="332" y="525" width="14" height="14"/>
+  <text class="legend" x="354" y="536">Dynamic Iceberg Table</text>
 
-  <rect class="src"   x="672" y="452" width="14" height="14"/>
-  <text class="legend" x="694" y="464">outside Snowflake</text>
+  <rect class="serve" x="485" y="525" width="14" height="14"/>
+  <text class="legend" x="507" y="536">serving layer</text>
 
-  <text class="legend" x="836" y="464">Only the connector is simulated. Everything downstream is what you would build for real.</text>
+  <rect class="src"   x="596" y="525" width="14" height="14"/>
+  <text class="legend" x="618" y="536">outside Snowflake</text>
 </svg>
