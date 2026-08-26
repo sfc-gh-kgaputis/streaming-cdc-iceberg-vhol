@@ -32,8 +32,11 @@ the effect. Then you will watch inspectors overturn failed frames and see yield
 
 - A Snowflake trial account, created with the signup link provided for this event.
   You will be ACCOUNTADMIN.
-- **Cortex Code** installed
+- **Cortex Code Desktop** installed
   ([download](https://www.snowflake.com/en/product/snowflake-coco/downloads/)).
+  Desktop specifically — the Cortex Code **CLI** is not available on standard Snowflake
+  trial accounts, and the Snowsight version has no local shell or filesystem, so it
+  cannot create the virtual environment or run the producer.
 - Git and Python 3.9+ locally.
 - About 90 minutes.
 
@@ -56,7 +59,7 @@ git clone https://github.com/sfc-gh-kgaputis/streaming-cdc-iceberg-vhol.git
 cd streaming-cdc-iceberg-vhol
 ```
 
-Open this folder in Cortex Code. The bundled skill loads automatically because it
+Open this folder in Cortex Code Desktop. The bundled skill loads automatically because it
 lives in `.snowflake/cortex/skills/` — there is nothing to install.
 
 ## B. Bootstrap the account (Snowsight)
@@ -83,6 +86,10 @@ CREATE USER IF NOT EXISTS VHOLuser
   COMMENT = 'Iceberg CDC VHOL lab user';
 GRANT ROLE ACCOUNTADMIN TO USER VHOLuser;
 
+-- Cortex access is NOT implied by ACCOUNTADMIN. Without these the agent step fails.
+GRANT DATABASE ROLE SNOWFLAKE.CORTEX_USER  TO ROLE ACCOUNTADMIN;
+GRANT DATABASE ROLE SNOWFLAKE.COPILOT_USER TO ROLE ACCOUNTADMIN;
+
 CREATE NETWORK POLICY IF NOT EXISTS vhol_np ALLOWED_IP_LIST = ('0.0.0.0/0');
 ALTER USER VHOLuser SET NETWORK_POLICY = vhol_np;
 
@@ -102,7 +109,7 @@ Then run this and copy the result:
 SELECT CURRENT_ORGANIZATION_NAME() || '-' || CURRENT_ACCOUNT_NAME() AS account_identifier;
 ```
 
-## C. Connect Cortex Code as VHOLuser
+## C. Connect Cortex Code Desktop as VHOLuser
 
 Add a connection using the `account_identifier` from above, user `VHOLuser`, and
 your token from `secret.pat` as the credential. Role `ACCOUNTADMIN`.
@@ -138,11 +145,19 @@ printed to the chat.
 > defaults on both schemas, create the Gen2 XSMALL warehouse HOL_WH, then create the
 > CDC destination table and the streaming telemetry table.
 
-Watch for three `ALTER SCHEMA` statements setting `EXTERNAL_VOLUME`, `CATALOG` and
-`ICEBERG_VERSION_DEFAULT = 3`. They are the most load-bearing statements in the lab:
-`CREATE DYNAMIC ICEBERG TABLE` has no version clause, so it can only *inherit* them.
-Skip them and tables either fail or silently land on Iceberg v2, which throws
-confusing timestamp errors much later.
+Watch for the storage defaults: `ALTER DATABASE ... ICEBERG_VERSION_DEFAULT = 3` plus
+`EXTERNAL_VOLUME`, `CATALOG` and `ICEBERG_VERSION_DEFAULT` on both schemas — and a
+`USE SCHEMA` before each Iceberg `CREATE`.
+
+That `USE SCHEMA` is not cosmetic, and it is the least obvious thing in this lab:
+**`ICEBERG_VERSION_DEFAULT` resolves from your session's current schema, not from the
+schema holding the table you are creating.** `EXTERNAL_VOLUME` and `CATALOG` resolve the
+way you would expect, from the target schema. So a `CREATE ICEBERG TABLE MFG.CDC.T`
+issued while your session is somewhere else gets the right storage and silently lands on
+Iceberg **v2** — while `SHOW PARAMETERS` keeps reporting `3`. A v2 table then rejects
+`VARIANT` and rejects the `TIMESTAMP_NTZ(9)` that `TIME_SLICE()` produces, far from the
+actual cause. And `CREATE DYNAMIC ICEBERG TABLE` has no version clause at all, so for
+the Dynamic Tables there is no way to override it per statement.
 
 Notice also what the telemetry table's DDL does **not** contain: no `CATALOG`, no
 `EXTERNAL_VOLUME`, no version. That is the point — it inherits.
@@ -151,100 +166,170 @@ Now verify, before building anything on top:
 
 > Run the preflight checks.
 
-**Checkpoint:** `aws_ok`, `cortex_ok` and `iceberg_ok` all come back TRUE, and the
-Iceberg table reports `SNOWFLAKE_MANAGED` / `MANAGED` / `3`. **Do not continue past a
+**Checkpoint:** `aws_ok`, `cortex_ok`, `cdc_iceberg_ok` and `raw_iceberg_ok` all come
+back TRUE, and every Iceberg object reports `is_v3 = TRUE`. **Do not continue past a
 FALSE** — see Troubleshooting.
 
-## Part 2 — Start both data sources · 8 min
+## Part 2 — The CDC journal · 8 min
+
+Real CDC connectors do not write your destination table directly. They append change
+events to a **journal**, and a merge processor applies that journal on a schedule. Build
+that:
+
+> Create the CDC journal table and its append-only stream.
+
+Two objects, and deliberately **no task**. The connector does not create one: its merge
+processor runs inside the connector runtime and issues the MERGE itself over its own
+Snowflake connection, with a CRON expression acting as an internal *eligibility gate*
+(the flow default is second :00 of every minute). The producer in this lab does exactly
+the same thing — so the merge you will watch is issued by the simulated connector, not by
+Snowflake scheduling.
+
+Three things fall out of this design, and all three are worth seeing:
+
+1. **Soft deletes** — a voided row is flagged, never removed.
+2. **A merge gate** — the destination lags the journal by up to a minute, and that lag is
+   a *scheduling* choice, not a throughput limit.
+3. **Two paths** — the initial snapshot loads the destination directly; ongoing changes
+   go through the journal. Same table, two very different writers.
+
+**Checkpoint:** the journal reports Iceberg format version 3 and the stream reports
+`mode = APPEND_ONLY`. `SHOW TASKS IN SCHEMA MFG.CDC` returns **zero rows** — that is
+correct, not a missing step.
+
+You will **inspect** this journal in Part 4. You will never build a Dynamic Table on it —
+it is connector-internal, its schema shifts with a generation counter, and the connector
+prunes it.
+
+## Part 3 — Start both data sources · 7 min
 
 > Start the producer in the background with both the CDC and telemetry sources, then
-> verify rows are landing in both tables.
+> verify rows are landing.
 
 Two sources doing two different jobs:
 
-- **CDC** → `PRODUCTION_SCANS`. Stands in for Openflow's Postgres CDC connector.
-  Inserts new scans, **updates** them when an inspector re-checks a frame, and
+- **CDC** → the journal, over Snowpipe Streaming. Stands in for Openflow's Postgres CDC
+  connector: inserts new scans, **updates** them when an inspector re-checks a frame, and
   **soft-deletes** voided duplicate scans.
-- **Telemetry** → `STATION_TELEMETRY`. Real **Snowpipe Streaming** into Iceberg, at
-  ~60 rows/sec.
+- **Telemetry** → `STATION_TELEMETRY`, also Snowpipe Streaming, at ~60 rows/sec.
 
-Only the *connector* is simulated. Everything downstream is exactly what you would
-build for real.
+Only the *connector* is simulated. Everything downstream is exactly what you would build
+for real.
 
-**Checkpoint:** both counts climb when you re-run the query. CDC lag is a second or
-two. Telemetry lag is **~30 seconds** — that is `MAX_CLIENT_LAG`, which defaults to
-30 s for Iceberg targets so Snowflake can size Parquet files sensibly. Expected, not
-a fault.
+**Checkpoint:** journal events, destination rows, and telemetry rows all climb when you
+re-run the query. Telemetry lag is **~30 seconds** — that is `MAX_CLIENT_LAG`, which
+defaults to 30 s for Iceberg targets so Snowflake can size Parquet files sensibly.
+Expected, not a fault. The destination trails the journal — that is Part 4.
 
 Worth a look while you are here:
 
-> Show me the pipes and channels for the telemetry table.
+> Show me the pipes and channels for these tables.
 
-There is no `CREATE PIPE` anywhere in this lab. Snowpipe Streaming auto-created a
-default pipe for the table.
+There is no `CREATE PIPE` anywhere in this lab. Snowpipe Streaming auto-created a default
+pipe for each target table.
 
-## Part 3 — Refine it: the soft-delete filter · 12 min
+## Part 4 — Inspect the change feed · 10 min
+
+This is the part that is actually about change data capture. Do not skip it.
+
+> Show me the raw change events in the journal, the mix of event types, and how far
+> behind the destination table is.
+
+What to look for:
+
+| `EVENT_TYPE` | What it carries |
+|---|---|
+| `IncrementalInsertRows` | every `PAYLOAD__*` populated |
+| `IncrementalUpdateRows` | `PAYLOAD__*` holds the **new** values; `PRIMARY_KEY__*` the **old** key |
+| `IncrementalDeleteRows` | every `PAYLOAD__*` is **NULL** — the key alone identifies the row |
+
+That last row is why the MERGE's insert branch needs
+`IFF(EVENT_TYPE='IncrementalDeleteRows', PRIMARY_KEY__SCAN_ID, PAYLOAD__SCAN_ID)`.
+
+Two details worth your time:
+
+> Show me SF_METADATA, what type it really is, and pull the offset token out of it.
+
+`SF_METADATA` is a `VARIANT` that holds a JSON **string**, not a parsed object, because
+that is what the connector writes. So `SF_METADATA:offset_token` returns `NULL` and
+`TYPEOF()` says `VARCHAR`; you need `PARSE_JSON(SF_METADATA::STRING):offset_token`.
+
+> Find the connector's merges in query history using its query tag.
+
+The connector stamps every merge with a `QUERY_TAG` identifying itself, its operation and
+its merge strategy. Filtering `QUERY_HISTORY` on that tag is how you would audit a real
+Openflow deployment, and it works identically here.
+
+**Checkpoint:** the journal count exceeds the destination count — that gap is the gate,
+not a backlog. Each merge starts at second **:00** of a minute and finishes in a second
+or two. That contrast is the honest lesson about where the latency lives: it is a
+schedule you choose, not a throughput limit.
+
+Want to prove it? Restart the producer with `--merge-gate-seconds 10` and watch
+`awaiting_merge` shrink. In production that is the connector's
+`Merge Task Schedule CRON` parameter.
+
+## Part 5 — Refine it: the soft-delete filter · 10 min
 
 > Create the two layer-one Dynamic Iceberg Tables: DT_SCANS_ACTIVE and DT_STATION_HEALTH.
 
 `DT_SCANS_ACTIVE` carries one predicate that matters more than it looks:
-`WHERE NOT _SNOWFLAKE_DELETED`. The Openflow connector never hard-deletes — a voided
-scan is still physically present, flagged. Omit that filter and voided frames count
-against yield forever. This single predicate is the difference between a correct CDC
-pipeline and a plausible-looking wrong one.
+`WHERE NOT _SNOWFLAKE_DELETED`. Omit it and voided frames count against yield forever.
+This single predicate is the difference between a correct CDC pipeline and a
+plausible-looking wrong one.
 
 **Checkpoint:** `SHOW DYNAMIC TABLES` reports `refresh_mode = INCREMENTAL`,
 `is_iceberg = true`, and an **empty** `refresh_mode_reason` for both.
 
-## Part 4 — Gold, and proof of incremental refresh · 14 min
+## Part 6 — Gold, and proof of incremental refresh · 12 min
 
 > Create the two Gold Dynamic Iceberg Tables: DT_YIELD_BY_LINE_5MIN joining the scans
 > to the telemetry, and DT_DEFECT_COUNTS_5MIN.
 
-`DT_YIELD_BY_LINE_5MIN` is the join that earns the second data source: yield and
-booth humidity in the same row, for the same 5-minute interval. Yield alone tells you
-PAINT is scrapping frames. Yield beside humidity tells you *why*.
+`DT_YIELD_BY_LINE_5MIN` is the join that earns the second data source: yield and booth
+humidity in the same row, for the same 5-minute interval. Yield alone tells you PAINT is
+scrapping frames. Yield beside humidity tells you *why*.
 
-`AVG_BOOTH_HUMIDITY` is empty for WELD and ASSEMBLY. That is correct — booth humidity
-is a paint-booth metric.
+`AVG_BOOTH_HUMIDITY` is empty for WELD and ASSEMBLY. That is correct — booth humidity is
+a paint-booth metric.
 
 > Show me the refresh history for these Dynamic Tables.
 
 **Checkpoint:** the per-refresh row counts stay small even as the base table grows.
 Snowflake is recomputing only the 5-minute groups that changed — while the source
-underneath is being UPDATEd and DELETEd continuously.
+underneath is being UPDATEd and DELETEd continuously by the connector's merges.
 
 Optional, and genuinely instructive:
 
 > Try adding a top-defect column using MODE(DEFECT_CODE) and show me what happens.
 
 It fails at `CREATE` time, not at refresh time:
-*"Change tracking is not supported on queries containing the function 'MODE'"*. That
-is why defects are counted at their natural grain and ranked at read time instead.
+*"Change tracking is not supported on queries containing the function 'MODE'"*. That is
+why defects are counted at their natural grain and ranked at read time instead.
 
-## Part 5 — A semantic view · 10 min
+## Part 7 — A semantic view · 8 min
 
 > Create the semantic view over the Gold tables, then run the three checkpoint queries.
 
 **Checkpoint:** all three queries return rows. In steady state each line sits around
 95–99% first-pass yield.
 
-## Part 6 — The plant analyst agent · 12 min
+## Part 8 — The plant analyst agent · 10 min
 
 > Create the Cascade Plant Analyst agent over the semantic view.
 
-Then open **Snowsight → AI & ML → Agents → Cascade Plant Analyst** and use the chat
-panel on the detail page. You do not need to Publish. Ask:
+Then open **Snowsight → AI & ML → Agents → Cascade Plant Analyst** and use the chat panel
+on the detail page. You do not need to Publish. Ask:
 
 1. *What is first-pass yield by line right now?*
 2. *Which defect is driving scrap on PAINT?*
 
-**Checkpoint:** the numbers match what you saw in Part 5, and the agent tells you
-which 5-minute interval it used.
+**Checkpoint:** the numbers match what you saw in Part 7, and the agent tells you which
+5-minute interval it used.
 
 Keep this tab open.
 
-## Part 7 — The incident, and the recovery · 18 min
+## Part 9 — The incident, and the recovery · 16 min
 
 Restart the producer with the incident armed:
 
@@ -264,22 +349,22 @@ Now the payoff. Ask the agent:
 
 3. *Why did PAINT yield drop?*
 
-**Checkpoint:** the agent connects the humidity rise to the `PAINT_RUN` defects and
-gets the **order** right — humidity first, defects second. That answer is only
-possible because two sources were joined in Part 4. An agent on the CDC feed alone
-could tell you *what* happened and never *why*.
+**Checkpoint:** the agent connects the humidity rise to the `PAINT_RUN` defects and gets
+the **order** right — humidity first, defects second. That answer is only possible because
+two sources were joined in Part 6. An agent on the CDC feed alone could tell you *what*
+happened and never *why*.
 
 Then the recovery:
 
 > Stop the producer and restart it in the background with the reinspect flag.
 
-Inspectors re-check failed frames and overturn them to PASS. This is an `UPDATE`
-arriving over CDC, and it **rewrites history** — buckets that already reported now
-report better numbers.
+Inspectors re-check failed frames and overturn them to PASS. This is an `UPDATE` arriving
+over CDC, flowing through the journal and the MERGE, and it **rewrites history** — buckets
+that already reported now report better numbers.
 
-**Checkpoint:** PAINT yield climbs back, including for earlier buckets, and the
-Dynamic Tables are still `INCREMENTAL`. An append-only pipeline cannot do this; it
-would have double-counted the frame or ignored the correction entirely.
+**Checkpoint:** PAINT yield climbs back, including for earlier buckets, and the Dynamic
+Tables are still `INCREMENTAL`. An append-only pipeline cannot do this; it would have
+double-counted the frame or ignored the correction entirely.
 
 ---
 
@@ -287,12 +372,18 @@ would have double-counted the frame or ignored the correction entirely.
 
 | Symptom | Cause | Fix |
 |---|---|---|
-| `iceberg_ok` is FALSE in preflight | One of the three `ALTER SCHEMA` statements did not run | Re-run all three on both `MFG.CDC` and `MFG.RAW`, then re-run the preflight. Any Iceberg table created before them must be recreated. |
+| `cdc_iceberg_ok` or `raw_iceberg_ok` is FALSE, or an object reports v2 | Your session's current schema was not one that resolves `ICEBERG_VERSION_DEFAULT = 3` when the table was created | Re-run `01_environment.sql` — it sets the database-level default and issues `USE SCHEMA` before each create. Then **recreate** any v2 table: Iceberg has no in-place v2 → v3 upgrade. |
+| `Unsupported data type 'VARIANT' for iceberg tables` | Same cause — the table resolved to v2 | Same fix. This is the error the journal throws, since `SF_METADATA` is `VARIANT`. |
+| `SHOW PARAMETERS` says 3 but tables come out v2 | Not a contradiction. That parameter is reported per schema but applied per *session* schema | `USE SCHEMA MFG.CDC;` immediately before the `CREATE`. Never trust `SHOW PARAMETERS` as proof. |
 | `cortex_ok` is FALSE | `CORTEX_ENABLED_CROSS_REGION` still `DISABLED` | Re-run that `ALTER ACCOUNT` from Setup B as ACCOUNTADMIN in Snowsight. |
-| `Unsupported data type 'VARIANT'` / odd timestamp scale errors | The table silently landed on Iceberg v2 | Same as above — the version default was missing. |
+| Rejected `TIMESTAMP_NTZ(9)` from `TIME_SLICE()` | The Dynamic Table landed on v2, and it has no version clause to override | Fix the session-schema issue above, then recreate the Dynamic Table. |
 | `refresh_mode` comes back `FULL` | Something in the query blocks incremental refresh | Read `refresh_mode_reason`; it names the cause. `APPROX_PERCENTILE` is a common one. |
 | `Change tracking is not supported ... 'MODE'` | `MODE()` in a Dynamic Table | Expected. Count at defect grain, rank at read time. |
+| Destination table stays behind the journal | That is the merge gate, by design | Check `QUERY_HISTORY` for the connector's `QUERY_TAG`. Merges fire at second :00 each minute. Lower `--merge-gate-seconds` to shrink the gap. |
+| Destination table gets **no** rows at all | The producer was started with `--no-merge`, or the journal objects do not exist | Restart the producer without `--no-merge`, and confirm the journal and its stream exist. |
+| `SF_METADATA:offset_token` returns NULL | It holds a JSON string, not an object — faithful connector behaviour | `PARSE_JSON(SF_METADATA::STRING):offset_token` |
 | Telemetry rows take ~30 s to appear | `MAX_CLIENT_LAG` defaults to 30 s for Iceberg | Expected behaviour, not a fault. |
+| Producer: `ERR_CHANNEL_HAS_UNCOMMITTED_DATA` (HTTP 409) | A previous run's channel is still committing, and you reopened the same channel name | Wait ~30 s and start it again. Do not run two producers at once. |
 | Producer: `externally-managed-environment` | macOS Homebrew Python, PEP 668 | Use the venv interpreter, not system Python. Ask Cortex Code to redo the venv step. |
 | Producer: authentication fails | Token expired, or `profile.json` has the wrong account | Tokens last 7 days. Re-mint in Snowsight and rebuild `profile.json`. |
 | Agent answers with stale numbers | The pipeline lags 1–2 min by design | Ask again in a minute. "Right now" means the most recent complete buckets. |
@@ -322,6 +413,15 @@ You never need to edit it. Run it with the venv interpreter so it finds the SDK 
 
 `--rate` sets scans/sec (default 2), `--telemetry-rate` sets telemetry rows/sec
 (default 60). `--help` lists the rest.
+
+`--cdc-mode` picks how the CDC half writes:
+
+- `journal` (default) — the faithful path. Change events go to the journal over Snowpipe
+  Streaming, and the producer issues the MERGE on its CRON gate. This is what the lab
+  teaches.
+- `direct` — writes the settled result straight to `PRODUCTION_SCANS` with ordinary DML.
+  No journal, no stream, no merge gate. Use it only if the journal objects are missing and you
+  need rows flowing to catch up; it loses the merge gate and the two-path design.
 
 # How the skill knows all this
 

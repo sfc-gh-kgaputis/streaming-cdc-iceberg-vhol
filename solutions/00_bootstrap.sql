@@ -38,6 +38,15 @@ CREATE USER IF NOT EXISTS VHOLuser
   COMMENT = 'Iceberg CDC VHOL lab user';
 GRANT ROLE ACCOUNTADMIN TO USER VHOLuser;
 
+-- Cortex access is NOT implied by ACCOUNTADMIN -- these are database roles and
+-- have to be granted explicitly, or the agent step in Part 8 fails.
+GRANT DATABASE ROLE SNOWFLAKE.CORTEX_USER  TO ROLE ACCOUNTADMIN;
+GRANT DATABASE ROLE SNOWFLAKE.COPILOT_USER TO ROLE ACCOUNTADMIN;
+
+-- Cortex Agents resolve permissions from the user's DEFAULT role, not the role
+-- active in the session. VHOLuser's default is ACCOUNTADMIN above; keep it that
+-- way or the agent will silently lose access to the pipeline.
+
 -- Tokens require the user to sit under a network policy. This one is permissive
 -- because it is a throwaway lab account; do not copy this into anything real.
 CREATE NETWORK POLICY IF NOT EXISTS vhol_np ALLOWED_IP_LIST = ('0.0.0.0/0');

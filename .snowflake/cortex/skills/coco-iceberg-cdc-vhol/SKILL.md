@@ -37,20 +37,40 @@ result.
   report the values (expect user `VHOLUSER`, role `ACCOUNTADMIN`), and confirm the
   `coco-iceberg-cdc-vhol` skill is active (you are running it).
 
-## The three load-bearing schema defaults
+## The load-bearing Iceberg defaults — and the trap in them
 
-Set these BEFORE creating any table, on **both** schemas:
+Set these before creating any table, on **both** schemas, plus the database:
 
 ```sql
+ALTER DATABASE MFG SET ICEBERG_VERSION_DEFAULT = 3;
 ALTER SCHEMA MFG.CDC SET EXTERNAL_VOLUME = 'SNOWFLAKE_MANAGED';
 ALTER SCHEMA MFG.CDC SET CATALOG = 'SNOWFLAKE';
 ALTER SCHEMA MFG.CDC SET ICEBERG_VERSION_DEFAULT = 3;
+-- and the same three on MFG.RAW
 ```
 
-`CREATE DYNAMIC ICEBERG TABLE` has **no** `ICEBERG_VERSION` clause — it can only
-inherit `ICEBERG_VERSION_DEFAULT`. Miss these and tables either fail outright or
-silently land on v2, which then throws confusing timestamp-scale errors much
-deeper in the pipeline. This is the single most common way to break this lab.
+**HARD RULE: issue `USE SCHEMA MFG.CDC;` (or `MFG.RAW`) immediately before every
+Iceberg `CREATE`.** This is not stylistic. Measured 26 Aug 2026:
+
+- `EXTERNAL_VOLUME` and `CATALOG` resolve from the schema that **contains** the new
+  table, as expected.
+- `ICEBERG_VERSION_DEFAULT` resolves from the **session's current schema**.
+
+So `CREATE ICEBERG TABLE MFG.CDC.T (...)` issued without `USE SCHEMA MFG.CDC` first
+gets the correct volume and catalog but silently lands on **version 2** — while
+`SHOW PARAMETERS ... IN SCHEMA MFG.CDC` continues to report `value = 3, level = SCHEMA`.
+The parameter is set, reported, and ignored. **Never cite `SHOW PARAMETERS` as proof
+that v3 is working**; only a created table's `iceberg_table_format_version` counts.
+
+Consequences of landing on v2, all of which surface far from the cause:
+`VARIANT` columns are rejected outright; `TIME_SLICE()`'s `TIMESTAMP_NTZ(9)` is
+rejected; and **`CREATE DYNAMIC ICEBERG TABLE` has no `ICEBERG_VERSION` clause at
+all**, so for the Dynamic Table layer there is no per-statement override — it inherits
+or it is wrong.
+
+There is no in-place v2 → v3 upgrade. A table that came out v2 must be recreated.
+Always run the preflight (`solutions/02_preflight.sql`) after creating tables, and
+before building anything on top of them.
 
 ## Object Model (single source of truth)
 
@@ -103,6 +123,49 @@ Emit the DDL from `references/object_model.md` verbatim. Shapes:
 `AVG_BOOTH_HUMIDITY` is legitimately NULL for WELD and ASSEMBLY — booth humidity
 is a paint-booth metric. Say so if the attendee asks; do not "fix" it.
 
+### The CDC journal — Iceberg v3, connector-internal
+
+Two objects: `MFG.CDC.PRODUCTION_SCANS_JOURNAL_1787700000_1` and its `APPEND_ONLY`
+stream `..._STREAM`. Emit both verbatim from `references/object_model.md`.
+
+**There is no task, and you must not create one.** The Openflow connector does not
+create a Snowflake `TASK` — verified against the connector source. Its merge processor
+runs inside the connector runtime and issues the MERGE itself over its own Snowflake
+connection, with a CRON expression acting as an internal *eligibility gate* (flow
+default `0 * * * * ?`, second :00 of every minute). In this lab the **producer** issues
+the MERGE the same way, on the same gate. If an attendee asks you to schedule the merge,
+explain that a task would misrepresent how the product works.
+
+The connector sets a `QUERY_TAG` on every merge, and so does the producer:
+`{"application":"SNOWFLAKE_OPENFLOW","operation":"cdc.merge.full_values","strategy":"full_values_snowflake_managed"}`.
+That is how you find the merges in `QUERY_HISTORY`, and it is how a customer would audit
+a real deployment. Use it for the merge-gate checkpoint instead of task history.
+
+Column order is fixed — `PRIMARY_KEY__<col>` first, then `PAYLOAD__<col>` for **every**
+source column, then `LEAST_/MOST_SIGNIFICANT_POSITION`, `EVENT_TYPE`, `SEEN_AT`,
+`SF_METADATA`.
+
+`EVENT_TYPE` literals: `IncrementalInsertRows`, `IncrementalUpdateRows`,
+`IncrementalDeleteRows`.
+
+Per-operation semantics that drive the MERGE:
+- **UPDATE** — `PRIMARY_KEY__*` is the OLD key, `PAYLOAD__*` the NEW values.
+- **DELETE** — every `PAYLOAD__*` is NULL. The key alone identifies the row, which is
+  why the MERGE's INSERT branch needs
+  `IFF(EVENT_TYPE='IncrementalDeleteRows', PRIMARY_KEY__SCAN_ID, PAYLOAD__SCAN_ID)`.
+
+The journal carries an explicit `ICEBERG_VERSION = 3` because `SF_METADATA VARIANT`
+fails outright on v2, and `ERROR_LOGGING = TRUE` as the connector sets.
+
+**Attendees INSPECT the journal; they never build Dynamic Tables on it.** It is
+connector-internal, its schema shifts with the generation counter, and the connector
+prunes it. Build on `PRODUCTION_SCANS`.
+
+**`SF_METADATA` holds a JSON *string*, not a parsed object** — the connector writes it
+that way. `SF_METADATA:offset_token` returns NULL; use
+`PARSE_JSON(SF_METADATA::STRING):offset_token`. `TYPEOF(SF_METADATA)` is `VARCHAR`.
+This is faithful, not a bug — make it a teaching moment rather than fixing it.
+
 ### MFG.CDC.PLANT_FLOOR_SV — semantic view
 
 Build from the verbatim DDL in `references/object_model.md`. Change only synonyms
@@ -116,7 +179,8 @@ Build from the verbatim spec in `references/agent_spec.md`.
 
 | # | Constraint |
 |---|---|
-| 1 | `TIME_SLICE()` returns `TIMESTAMP_NTZ(9)`, rejected by Iceberg **v2**, accepted on v3. Keep the `::TIMESTAMP_NTZ(6)` cast anyway — it is free insurance if a schema default was missed. |
+| 0 | **`ICEBERG_VERSION_DEFAULT` resolves from the session's current schema, not the target table's schema.** `EXTERNAL_VOLUME` and `CATALOG` resolve from the target schema. Always `USE SCHEMA` first. `SHOW PARAMETERS` is not a valid check — only a created table's `iceberg_table_format_version` is. |
+| 1 | `TIME_SLICE()` returns `TIMESTAMP_NTZ(9)`, rejected by Iceberg **v2**, accepted on v3. Keep the `::TIMESTAMP_NTZ(6)` cast anyway — it is free insurance if the version default did not take. |
 | 2 | **`MODE()` is a hard `CREATE` error** under change tracking: *"Change tracking is not supported on queries containing the function 'MODE'"*. Never put it in a Dynamic Table. Count at defect grain and rank at read time. |
 | 3 | `OBJECT` / `OBJECT_AGG` output is rejected by Iceberg on **v2 and v3 alike**. |
 | 4 | Bare `NUMBER` is rejected — use `NUMBER(38,0)`. |
@@ -164,81 +228,111 @@ Follow the attendee's lead. Each step maps to one prompt.
      `secret.pat` is missing, ask the attendee to paste their `vhol_pat` token
      into it first.
 
-1. **Environment + tables** — create `MFG`, schemas `CDC` and `RAW`, **the three
-   Iceberg defaults on both schemas**, `HOL_WH`, then `PRODUCTION_SCANS` and
-   `STATION_TELEMETRY`. Then run the preflight (Checkpoint P). Set context with
-   `USE DATABASE MFG; USE SCHEMA CDC; USE WAREHOUSE HOL_WH;`.
+1. **Environment + tables** — create `MFG`, schemas `CDC` and `RAW`, the database-level
+   version default, **the three Iceberg defaults on both schemas**, `HOL_WH`, then
+   `PRODUCTION_SCANS` and `STATION_TELEMETRY`. `USE SCHEMA` before each Iceberg
+   create. Then run the preflight (Checkpoint P).
 
-2. **Start the producer** — **in the background** (Bash `run_in_background`) with
-   the venv interpreter, so it keeps streaming while later layers build:
+2. **CDC journal** — create the journal table and its `APPEND_ONLY` stream. Two objects,
+   verbatim from `references/object_model.md`. **No task** — the producer issues the
+   MERGE, because that is what the connector does. Checkpoint J.
+
+3. **Start the producer** — **in the background** (Bash `run_in_background`) with the
+   venv interpreter, so it keeps streaming while later layers build:
    `<venv-python> producer/producer.py --profile producer/profile.json --cdc --telemetry`
-   Then Checkpoint I. For the incident (step 6) and the recovery (step 7), stop
-   the running producer and restart it with the extra flag.
+   Then Checkpoint I. For the incident (step 7) and the recovery (step 8), stop the
+   running producer and restart it with the extra flag.
 
-3. **Layer 1** — `DT_SCANS_ACTIVE` and `DT_STATION_HEALTH`. Checkpoint D.
+4. **Inspect the journal** — walk the change events, the three `EVENT_TYPE` shapes, the
+   `SF_METADATA` `PARSE_JSON` quirk, and above all the **merge gate**: the journal always
+   leads the destination, and `QUERY_HISTORY` filtered on the connector's `QUERY_TAG`
+   shows one MERGE per minute at second :00, each finishing in a second or two.
+   Checkpoint G-gate. Do not skip this step — it is the best lesson in the architecture.
 
-4. **Gold** — `DT_YIELD_BY_LINE_5MIN` (the join) and `DT_DEFECT_COUNTS_5MIN`.
-   Checkpoint G. Then show refresh history, and if asked, demonstrate the
-   `MODE()` failure as a real teaching moment.
+5. **Layer 1** — `DT_SCANS_ACTIVE` and `DT_STATION_HEALTH`. Checkpoint D.
 
-5. **Semantic view + agent** — emit both verbatim from `references/`. For the
-   semantic view follow its syntax rules exactly (`AS` not `=`, `WITH SYNONYMS`,
-   alias-qualified metrics); if a create fails, re-emit the verbatim DDL rather
-   than improvising the grammar. For the agent, dollar-quote with `$$` (never a
-   named tag like `$spec$`) and set `models.orchestration` to `"auto"`. After
-   creating it, tell the attendee to chat with it in **Snowsight → AI & ML →
-   Agents → Cascade Plant Analyst**, on the detail page's chat panel — not here.
-   They do NOT need to Publish.
+6. **Gold** — `DT_YIELD_BY_LINE_5MIN` (the join) and `DT_DEFECT_COUNTS_5MIN`.
+   Checkpoint Y. Then show refresh history, and if asked, demonstrate the `MODE()`
+   failure as a real teaching moment.
 
-6. **The incident** — restart the producer with `--incident`. Booth humidity
-   ramps first, then PAINT defects spike ~90 s later. Have the attendee stopwatch
-   each layer. Then ask the agent *why*. Checkpoint X.
+7. **Semantic view + agent** — emit both verbatim from `references/`. For the semantic
+   view follow its syntax rules exactly (`AS` not `=`, `WITH SYNONYMS`, alias-qualified
+   metrics); if a create fails, re-emit the verbatim DDL rather than improvising the
+   grammar. For the agent, dollar-quote with `$$` (never a named tag like `$spec$`) and
+   set `models.orchestration` to `"auto"`. After creating it, tell the attendee to chat
+   with it in **Snowsight → AI & ML → Agents → Cascade Plant Analyst**, on the detail
+   page's chat panel — not here. They do NOT need to Publish.
 
-7. **The recovery** — restart with `--reinspect`. Inspectors overturn failed
-   frames to PASS and **yield goes back up**, including for buckets that already
-   reported. Confirm the DTs are still INCREMENTAL. Checkpoint R.
+8. **The incident** — restart the producer with `--incident`. Booth humidity ramps
+   first, then PAINT defects spike ~90 s later. Have the attendee stopwatch each layer.
+   Then ask the agent *why*. Checkpoint X.
+
+9. **The recovery** — restart with `--reinspect`. Inspectors overturn failed frames to
+   PASS and **yield goes back up**, including for buckets that already reported.
+   Confirm the DTs are still INCREMENTAL. Checkpoint R.
 
 ## Checkpoints
 
-- **P (preflight):** `aws_ok`, `cortex_ok` and `iceberg_ok` must all be TRUE.
+- **P (preflight):** `aws_ok`, `cortex_ok`, `cdc_iceberg_ok` and `raw_iceberg_ok` must
+  all be TRUE, and every existing Iceberg object must report `is_v3 = TRUE`.
   See `solutions/02_preflight.sql`. Do not proceed past a FALSE.
+- **J (journal objects):** the journal reports Iceberg format version 3 and the stream
+  reports `mode = APPEND_ONLY`. There should be **no** tasks in the schema:
+  ```sql
+  SHOW ICEBERG TABLES LIKE 'PRODUCTION_SCANS_JOURNAL%' IN SCHEMA MFG.CDC;
+  SHOW STREAMS LIKE '%_JOURNAL_%_STREAM' IN SCHEMA MFG.CDC;
+  SHOW TASKS IN SCHEMA MFG.CDC;   -- expect zero rows
+  ```
 - **I (ingest):** both sources landing.
   ```sql
-  SELECT COUNT(*) AS scans, COUNT_IF(STATUS='FAIL') AS fails,
-         DATEDIFF('second', MAX(EVENT_TS), CURRENT_TIMESTAMP()) AS seconds_ago
-  FROM MFG.CDC.PRODUCTION_SCANS;
+  SELECT COUNT(*) AS journal_events, COUNT_IF(EVENT_TYPE='IncrementalUpdateRows') AS updates
+  FROM MFG.CDC.PRODUCTION_SCANS_JOURNAL_1787700000_1;
+  SELECT COUNT(*) AS destination_rows FROM MFG.CDC.PRODUCTION_SCANS;
   SELECT COUNT(*) AS telemetry_rows,
          DATEDIFF('second', MAX(EVENT_TS), CURRENT_TIMESTAMP()) AS seconds_ago
   FROM MFG.RAW.STATION_TELEMETRY;
   ```
-  Both counts climb on re-run. CDC `seconds_ago` is a second or two; telemetry is
-  ~30 s because of `MAX_CLIENT_LAG` — that is expected, not a fault.
+  All climb on re-run. Telemetry `seconds_ago` is ~30 s because of `MAX_CLIENT_LAG` —
+  expected, not a fault. The destination trails the journal by up to a minute — also
+  expected, and it is the next checkpoint.
+- **G-gate (the merge gate):** `journal_inserts` exceeds `destination_rows`, and
+  `QUERY_HISTORY` filtered on the connector's `QUERY_TAG` shows one MERGE per minute,
+  each starting at second :00 and completing in a second or two. Both queries are in
+  `solutions/03_cdc_journal.sql`. The gap is the gate, not the merge.
 - **D (layer 1):** `SHOW DYNAMIC TABLES IN SCHEMA MFG.CDC` — every row must read
   `refresh_mode = INCREMENTAL`, `is_iceberg = true`, and an empty
   `refresh_mode_reason`.
-- **G (gold):** yield by line for recent buckets. Three lines, each around 95–99%
-  in steady state, with `HUMIDITY` populated for PAINT only.
+- **Y (gold):** yield by line for recent buckets. Three lines, each around 95–99% in
+  steady state, with `HUMIDITY` populated for PAINT only.
 - **X (incident):** PAINT `FIRST_PASS_YIELD_PCT` drops into the 70s while WELD and
-  ASSEMBLY stay in the high 90s, `AVG_BOOTH_HUMIDITY` for PAINT climbs from ~44
-  into the 60s–70s, and `PAINT_RUN` dominates the defect counts.
+  ASSEMBLY stay in the high 90s, `AVG_BOOTH_HUMIDITY` for PAINT climbs from ~44 into
+  the 60s–70s, and `PAINT_RUN` dominates the defect counts.
 - **R (recovery):** PAINT yield rises again and `COUNT_IF(_SNOWFLAKE_UPDATED_AT >
   _SNOWFLAKE_INSERTED_AT)` on `PRODUCTION_SCANS` climbs. The DTs stay INCREMENTAL.
 
 ## Stopping Points
 
-- Do not create any table before the three `ALTER SCHEMA` defaults are set.
-- Do not proceed past Checkpoint P with any FALSE.
-- Confirm `PRODUCTION_SCANS` and `STATION_TELEMETRY` both exist before starting
-  the producer.
+- Do not create any Iceberg table without `USE SCHEMA` on the line before it.
+- Do not create any table before the storage defaults are set.
+- Do not proceed past Checkpoint P with any FALSE, or any object reporting v2.
+  There is no in-place v2 → v3 upgrade; a v2 table must be recreated.
+- Confirm the journal and its stream exist before starting the producer in `journal`
+  mode — otherwise the events have nowhere to land.
+- Never create a Snowflake task for the merge. The connector does not, and doing so
+  would teach attendees something false about the product.
+- Confirm `PRODUCTION_SCANS` and `STATION_TELEMETRY` both exist before starting the
+  producer.
 - Run each layer's Checkpoint before moving to the next.
 
 ## References
 
-- `references/object_model.md` — verbatim DDL for the DAG and the semantic view.
+- `references/object_model.md` — verbatim DDL for the journal, the DAG, and the
+  semantic view.
 - `references/agent_spec.md` — verbatim agent spec and the three questions.
 
 ## Output
 
-The Cascade Cycleworks pipeline: `PRODUCTION_SCANS`, `STATION_TELEMETRY`, four
-Dynamic Iceberg Tables, `PLANT_FLOOR_SV`, and an agent that can explain a
-two-phase quality incident by reading across both sources.
+The Cascade Cycleworks pipeline: a CDC journal and the producer-issued gated MERGE,
+`PRODUCTION_SCANS`,
+`STATION_TELEMETRY`, four Dynamic Iceberg Tables, `PLANT_FLOOR_SV`, and an agent that
+can explain a two-phase quality incident by reading across both sources.

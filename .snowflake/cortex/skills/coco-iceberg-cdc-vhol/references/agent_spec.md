@@ -1,6 +1,6 @@
 # Agent spec — verbatim
 
-Source of truth: `solutions/05_agent.sql`
+Source of truth: `solutions/06_agent.sql`
 
 ## Rules that matter
 
