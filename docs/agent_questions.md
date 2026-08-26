@@ -44,7 +44,7 @@ simulator control mode to `INCIDENT`. The producer keeps running throughout; you
 **order** right: humidity climbed first, defects followed. It should also note that WELD and ASSEMBLY
 were unaffected.
 
-**Why this is the whole lab:** humidity comes from the Snowpipe Streaming telemetry feed. Defects and
+**Why it is worth asking:** humidity comes from the Snowpipe Streaming telemetry feed. Defects and
 yield come from the CDC feed. Nothing in either source alone contains the answer. It exists only
 because `YIELD_BY_LINE_5MIN` joined them on line and 5-minute bucket in Part 3. An agent over the
 CDC feed alone can tell you *what* happened and never *why*.
@@ -63,8 +63,7 @@ CDC feed alone can tell you *what* happened and never *why*.
 
 ## Worth trying if you have time
 
-These are not scripted, and the agent may or may not handle them well — which is itself the useful
-observation:
+These are not scripted. Watch how the agent copes with a question nobody built the pipeline for:
 
 > Should I stop the PAINT line?
 
@@ -72,5 +71,5 @@ observation:
 
 > Is anything wrong on WELD?
 
-The last one is the interesting one. The honest answer is "no", and an agent that manufactures a
-problem on a healthy line is telling you something about its instructions.
+The honest answer to the last one is "no". An agent that manufactures a problem on a healthy line is
+telling you its instructions need work.

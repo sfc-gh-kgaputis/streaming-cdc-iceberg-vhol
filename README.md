@@ -227,11 +227,11 @@ Six Parts, then two optional acts. Do the optional acts if you are ahead.
 
 If you heard the three Acts on the overview slide, this is how they map:
 
-| Act | Parts |
-|---|---|
-| 1 — Real-time ingestion | 1, 2 |
-| 2 — Continuous transformation | 3 |
-| 3 — Serve it: to an agent, and to any engine | 4, 5, 6 |
+| Act | Parts | What you do in them |
+|---|---|---|
+| 1 — Real-time ingestion | 1, 2 | Create the Iceberg targets, then land both feeds in them |
+| 2 — Continuous transformation | 3 | Layer four Dynamic Tables over both feeds |
+| 3 — Serve it: to an agent, and to any engine | 4, 5, 6 | Ask it questions, revise the history behind the answers, then read the tables from outside Snowflake |
 
 **Prompt** blocks are what you paste into Cortex Code, not SQL and not a shell command. Use the copy
 button in the block's top-right corner. **Fast path** blocks are finished SQL for the same step, and
@@ -261,15 +261,14 @@ context.
 Create the lab environment and both landing tables.
 ```
 
-Two schemas, and the split is the shape of the pipeline rather than the shape of the feeds:
+Two schemas, so that provenance is readable off any fully-qualified name: a table in `RAW` arrived from
+outside, a table in `ANALYTICS` was computed for you. The split follows the shape of the pipeline rather
+than the shape of the feeds.
 
 | Schema | Holds | Why |
 |---|---|---|
 | `MFG.RAW` | The CDC destination table, its journal and stream, and the telemetry table | Both feeds land here. The journal sits beside its destination table because that is where the real Openflow connector puts it. |
 | `MFG.ANALYTICS` | All four Dynamic Tables, the semantic view, the agent | Everything derived. Nothing writes here; Snowflake maintains all of it. |
-
-By the end you will be able to read the pipeline off a fully-qualified name. A table in `RAW` arrived
-from outside; a table in `ANALYTICS` was computed for you.
 
 **Two rules put every Iceberg object on v3, and both are in the DDL you are about to approve.**
 
@@ -422,8 +421,10 @@ pipeline and a plausible-looking wrong one. Read for it.
 Create the two layer-one Dynamic Tables, INSPECTIONS_ACTIVE and STATION_HEALTH.
 ```
 
-`INSPECTIONS_ACTIVE` carries the predicate that matters: `WHERE NOT _SNOWFLAKE_DELETED`. Omit it and
-voided frames count against yield forever.
+`INSPECTIONS_ACTIVE` carries the predicate that matters: `WHERE NOT _SNOWFLAKE_DELETED`. A CDC
+destination retains deleted rows and marks them, so anything built on one needs this predicate or it
+counts rows the source has already retracted. Here: omit it and voided frames count against yield
+forever. Part 5 depends on it.
 
 **In steady state:** `INSPECTIONS_ACTIVE` tracks the destination table closely, a little smaller,
 because soft-deleted rows are filtered out. `STATION_HEALTH` is tiny by comparison: it is one row per
@@ -440,9 +441,10 @@ Read it rather than guessing.
 Create the two Gold Dynamic Tables, YIELD_BY_LINE_5MIN and DEFECT_COUNTS_5MIN.
 ```
 
-`YIELD_BY_LINE_5MIN` is the join that pays for the second data source: yield and booth humidity in the
-same row, for the same 5-minute interval. Yield alone tells you PAINT is scrapping frames. Yield
-beside humidity tells you *why*.
+`YIELD_BY_LINE_5MIN` is the join that pays for the second data source. One feed tells you *what*
+happened; a second feed joined on the same grain tells you *why*. Here: yield and booth humidity in the
+same row for the same 5-minute interval, which is what makes the agent's causal answer possible in
+Part 5.
 
 `AVG_BOOTH_HUMIDITY` is empty for WELD and ASSEMBLY. That is correct; booth humidity is a paint-booth
 metric.
@@ -515,8 +517,13 @@ interval it used. Keep this tab open; you need it in Part 5.
 
 **Approach: direct execution**, then read.
 
-The producer is still running from Part 2, and it stays running. What changes is the **plant**, not
-the pipeline. You write a row to a control table and the running simulator picks it up within about
+This Part demonstrates the two hard properties of any change feed: a **cause arrives before its
+effect**, and a **correction arrives after the aggregate has already reported**. Handling both is what
+separates a CDC pipeline from an append-only one. Here: a paint booth drifts, and inspectors then
+overturn the frames it spoiled.
+
+The producer is still running from Part 2, and it stays running. What changes is the **plant**, not the
+pipeline. You write a row to a control table and the running simulator picks it up within about
 ten seconds:
 
 **Prompt:**
@@ -575,7 +582,9 @@ INSERT INTO MFG.RAW.SIMULATOR_CONTROL (MODE, UPDATED_AT)
 
 Inspectors re-check failed frames and overturn them to PASS. This is an `UPDATE` arriving over CDC,
 flowing through the journal and the MERGE, and it **rewrites history**: buckets that already reported
-now report better numbers.
+now report better numbers. It works because of two things you already built: the journal's
+`IncrementalUpdateRows` events, which carry the new values (Part 2), and `INSPECTIONS_ACTIVE`'s
+soft-delete predicate (Part 3).
 
 **Checkpoint:** PAINT yield climbs back, including for earlier buckets, and the Dynamic Tables are
 still `INCREMENTAL`. An append-only pipeline cannot do this; it would have double-counted the frame or
