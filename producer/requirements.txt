@@ -1,0 +1,12 @@
+# Producer dependencies.
+#
+# Versions are pinned because a 90-minute lab cannot absorb a surprise upstream
+# release. If you are running this outside the lab, feel free to unpin.
+
+# Snowpipe Streaming SDK -- the high-performance architecture, and the only one
+# that supports Iceberg v3 targets. Used for the telemetry feed.
+snowpipe-streaming==1.7.1
+
+# Used by the CDC simulator, which issues ordinary INSERT/UPDATE DML the way the
+# Openflow connector's MERGE would leave it.
+snowflake-connector-python==4.7.2
