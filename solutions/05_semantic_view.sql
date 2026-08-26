@@ -104,9 +104,9 @@ CREATE OR REPLACE SEMANTIC VIEW MFG.ANALYTICS.PLANT_FLOOR_SV
 -- CHECKPOINTS -- the three questions the agent has to answer in Parts 4 and 5
 -- =====================================================================
 -- Query a semantic view with SEMANTIC_VIEW(), naming DIMENSIONS and METRICS.
--- If these three work, the agent has what it needs -- and if the agent later
--- gets one of them wrong, you know the problem is in its instructions, not in
--- this view. That is the point of running them by hand first.
+-- If these three work, the agent has what it needs. And if the agent later gets
+-- one of them wrong, you know the problem is in its instructions, not in this
+-- view. That is why you run them by hand first.
 
 -- Q1  "What is first-pass yield by line right now?"
 SELECT * FROM SEMANTIC_VIEW(MFG.ANALYTICS.PLANT_FLOOR_SV

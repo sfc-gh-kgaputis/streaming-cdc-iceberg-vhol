@@ -49,8 +49,8 @@ The script prints, in order:
 - the rows
 - a **smaller** row count after predicate pushdown on `LINE == 'PAINT'`
 
-That storage path is the whole point: those are the same bytes Snowflake reads, read by
-an engine that has never heard of Snowflake.
+That storage path is what proves the claim: those are the same bytes Snowflake reads,
+read by an engine that has never heard of Snowflake.
 
 ## Troubleshooting
 
@@ -61,11 +61,11 @@ an engine that has never heard of Snowflake.
 | HTTP 404 on the catalog | Catalog or namespace name is lower-case | Uppercase them. `warehouse=` is the **database** name, also uppercase. |
 | Reads nothing, but no error | No Gold Dynamic Table exists yet, or it is suspended | This act needs `MFG.ANALYTICS.YIELD_BY_LINE_5MIN` to exist. Check with `SHOW DYNAMIC TABLES IN SCHEMA MFG.ANALYTICS`. |
 
-## Worth saying out loud
+## Billing
 
 Horizon catalog access is billed as **external-engine access**, even when the reader is
-another Snowflake account. That does not change the architectural claim — the data is
-open and readable by any Iceberg engine — but it is not a free read, and an attendee
+another Snowflake account. That does not change the architectural claim, since the data is
+open and readable by any Iceberg engine, but it is not a free read, and an attendee
 planning to copy this pattern should know.
 
 ## Stopping points

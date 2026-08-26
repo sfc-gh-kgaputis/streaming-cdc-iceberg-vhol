@@ -24,9 +24,8 @@ def arm_incident(cdc_sim: Any, telem_sim: Any, after: float, minutes: float) -> 
     """The two-phase cascade: cause leads effect.
 
     Humidity starts drifting immediately; PAINT defects spike `after` seconds
-    later. That ordering is the whole point of the payoff question -- the agent has
-    to notice the cause preceded the effect -- so the delay is deliberate, not an
-    artefact of how fast the pipeline is.
+    later. The agent has to notice the cause preceded the effect, so the delay
+    is deliberate, not an artefact of how fast the pipeline is.
     """
     if telem_sim:
         telem_sim.start_drift(after)

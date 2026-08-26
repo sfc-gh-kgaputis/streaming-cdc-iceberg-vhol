@@ -85,13 +85,12 @@ GROUP BY 1, 2, 3, 4;
 -- ---------------------------------------------------------------------
 -- Gold 1: yield per line per 5 minutes, WITH the booth metric alongside it.
 --
--- This is the join that earns the second data source. Yield alone tells you
--- PAINT is scrapping frames; yield next to humidity tells you WHY, and that
--- is the difference between an agent that reports and an agent that explains.
+-- This is the join that pays for the second data source. Yield alone tells you
+-- PAINT is scrapping frames; yield next to humidity tells you WHY.
 --
--- AVG_BOOTH_HUMIDITY is NULL for WELD and ASSEMBLY, which is correct --
--- booth humidity is a paint-booth metric. The LEFT JOIN keeps those lines
--- in the result instead of dropping them.
+-- AVG_BOOTH_HUMIDITY is NULL for WELD and ASSEMBLY, which is correct: booth
+-- humidity is a paint-booth metric. The LEFT JOIN keeps those lines in the
+-- result instead of dropping them.
 -- ---------------------------------------------------------------------
 CREATE OR REPLACE DYNAMIC ICEBERG TABLE MFG.ANALYTICS.YIELD_BY_LINE_5MIN
   TARGET_LAG = '1 minute'
