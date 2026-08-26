@@ -2,10 +2,10 @@
 
 Virtual Hands-On Lab · **27 August 2026, 10:00 AM PT**
 
-In about 70 minutes you will build a real-time manufacturing pipeline on Snowflake. Change data
-capture from an operational database lands in **Apache Iceberg** tables, **Dynamic Tables** refine it
-continuously, and an **AI agent** explains what is happening on the plant floor. You build it by
-prompting **Cortex Code**, not by pasting SQL.
+You will build a real-time manufacturing pipeline on Snowflake. Change data capture from an
+operational database lands in **Apache Iceberg** tables, **Dynamic Tables** refine it continuously,
+and an **AI agent** explains what is happening on the plant floor. You build it by prompting
+**Cortex Code**, not by pasting SQL.
 
 ![Two feeds land in Snowflake-managed Apache Iceberg v3 tables. A simulated Openflow Postgres CDC connector appends change events to a journal table over Snowpipe Streaming, and an append-only stream feeds a MERGE that maintains the QUALITY_INSPECTIONS destination table with soft deletes. In parallel, station telemetry streams directly into the STATION_TELEMETRY Iceberg table. Four Dynamic Iceberg Tables refine both feeds incrementally: INSPECTIONS_ACTIVE filters soft-deleted rows and STATION_HEALTH rolls up telemetry, then YIELD_BY_LINE_5MIN joins scans to telemetry per five-minute bucket and DEFECT_COUNTS_5MIN counts defects. A semantic view sits over the gold tables, a Cortex Agent answers questions over the semantic view, and PyIceberg reads the same gold tables from outside Snowflake through the Horizon Catalog.](docs/architecture.svg)
 
@@ -54,7 +54,7 @@ Three reasons it is simulated:
 
 - **Openflow is not typically available on trial accounts**, and this lab runs entirely in yours.
 - Standing up a source Postgres database and a connector runtime is an infrastructure exercise, not a
-  data-engineering one. It does not fit in 90 minutes.
+  data-engineering one.
 - What matters is what lands *in* Snowflake and what you build on top of it.
 
 So the simulator is faithful where that matters. It creates its own destination table, journal and
@@ -83,7 +83,6 @@ Everything here is **pre-work**. Nothing installs during the session.
   producer.
 - **Snowsight** in a browser tab, logged in to the same account. You will switch to it twice.
 - **Git** and **Python 3.9+** locally.
-- About 70 minutes for the lab, plus 15 minutes of setup you do beforehand.
 
 ## Repo layout
 
@@ -100,7 +99,7 @@ Everything here is **pre-work**. Nothing installs during the session.
 
 # Setup — do this before the session
 
-Budget 15 minutes. If you arrive with all four checkpoints green, you will keep pace.
+Do these in order. If you arrive with all four checkpoints green, you will keep pace.
 
 ## A. Get the lab files
 
@@ -217,7 +216,7 @@ Budget 15 minutes. If you arrive with all four checkpoints green, you will keep 
 
 # Run the lab
 
-Five Parts, **66 minutes**. Two optional acts follow the core. Do them if you are ahead.
+Five Parts. Two optional acts follow the core. Do them if you are ahead.
 
 **Prompt** blocks are what you paste into Cortex Code, not SQL and not a shell command. Use the copy
 button in the block's top-right corner. **Fast path** blocks are finished SQL for the same step, and
@@ -231,7 +230,7 @@ Each Part names how you should drive Cortex Code:
   about.
 - **Direct execution.** Let it run without reviewing each statement. Fine for read-only inspection.
 
-## Part 1 — Land both feeds in Iceberg · 12 min
+## Part 1 — Land both feeds in Iceberg
 
 **Approach: generate then confirm.** This Part creates every object the rest of the lab stands on, and
 one of them has a failure mode that only surfaces four Parts later. Read the DDL before you approve
@@ -303,7 +302,7 @@ Iceberg object reports `is_v3 = TRUE`, and the stream reports `mode = APPEND_ONL
 **Do not continue past a FALSE.** See [Troubleshooting](#troubleshooting). There is no in-place
 v2 → v3 upgrade, so a wrong answer here gets more expensive with every Part.
 
-## Part 2 — Watch the connector's change feed · 12 min
+## Part 2 — Watch the connector's change feed
 
 **Approach: direct execution.** Everything here is read-only.
 
@@ -433,7 +432,7 @@ it works identically here.
 **Checkpoint:** roughly one MERGE per minute since you started the producer, each beginning at second
 `:00` and finishing in a second or two. Many short merges on a schedule, not one long-running one.
 
-## Part 3 — Refine it with Dynamic Tables · 14 min
+## Part 3 — Refine it with Dynamic Tables
 
 **Approach: generate then confirm.** One predicate in here is the difference between a correct
 pipeline and a plausible-looking wrong one. Read for it.
@@ -500,7 +499,7 @@ Show me the lab progress query.
 **Checkpoint:** it lists every object you should have built by now with its row count, and flags
 anything missing. This is also the fastest way for the presenter to see who is stuck.
 
-## Part 4 — Ask it questions in English · 12 min
+## Part 4 — Ask it questions in English
 
 **Approach: sequential prompts.** Two objects, and the second depends on the first being right.
 
@@ -533,7 +532,7 @@ detail page. You do not need to Publish. Ask the first two questions from
 **Checkpoint:** the numbers match what the semantic view returned, and the agent names the 5-minute
 interval it used. Keep this tab open; you need it in Part 5.
 
-## Part 5 — The incident, and the recovery · 16 min
+## Part 5 — The incident, and the recovery
 
 **Approach: direct execution**, then read.
 
@@ -609,7 +608,7 @@ ignored the correction entirely.
 
 Core lab done. Both of these stand alone. Do either, both, or neither.
 
-## Optional A — Read your Iceberg tables from your laptop · 5 min
+## Optional A — Read your Iceberg tables from your laptop
 
 The claim this lab makes is that your data is in **open** Iceberg, governed by Snowflake but not
 locked inside it. This proves it. PyIceberg reads the Gold Dynamic Table straight from object storage
@@ -640,7 +639,7 @@ $iceberg-external-read Walk me through reading the Gold table.
 `LINE == 'PAINT'`. Those are the same bytes Snowflake reads, read by an engine that has never heard of
 Snowflake.
 
-## Optional B — Break it on purpose · 3 min
+## Optional B — Break it on purpose
 
 **Prompt:**
 
