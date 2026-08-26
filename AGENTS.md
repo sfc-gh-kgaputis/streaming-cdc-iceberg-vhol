@@ -6,6 +6,11 @@ hands-on lab. Setup, the walkthrough, and troubleshooting are in
 
 ## Working in this repo
 
+- **The subject is the technology, not the bicycles.** Cascade Cycleworks is a worked
+  example. What you are learning is real-time ingestion into open Iceberg, incremental
+  transformation, serving to an agent, and how to drive Cortex Code — all of which
+  transfer to any source that mutates and any metric someone needs sooner. When you
+  explain something, name the capability first and the plant second.
 - You build the pipeline by **prompting Cortex Code**, not by writing SQL yourself.
   Two skills in `.snowflake/cortex/skills/` load automatically when you open this
   folder: `streaming-cdc-iceberg-lab` supplies the object names, Iceberg settings

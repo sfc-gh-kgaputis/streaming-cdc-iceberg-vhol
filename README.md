@@ -28,21 +28,33 @@ wasted on that loop, and end-of-shift batch is far too slow.
 
 ## What you will understand by the end
 
-- **How a correction that arrives late rewrites metrics that already reported.** An inspector
-  overturns a failed frame an hour after the fact, and PAINT's yield for that 5-minute bucket goes
-  back **up**. An append-only pipeline cannot do this; it double-counts the frame or ignores the
-  correction.
-- **How Dynamic Tables keep a two-source join continuously fresh.** You set a target lag. There is no
-  orchestrator, no schedule, and no task, and the refresh stays incremental while the base tables are
-  being updated and deleted underneath it.
-- **Why a second data source is what lets an agent answer *why*.** Yield alone tells you PAINT is
-  scrapping frames. Yield joined to booth humidity tells you the cause, and the agent gets the order
-  right.
-- **That what you built is open Apache Iceberg, not a Snowflake format.** In Part 6 you read the same
-  tables from your own laptop with Python, through the Horizon Catalog, with no Snowflake warehouse in
-  the loop.
-- **How a bundled Cortex Code skill turns a one-line prompt into exactly the right object.** Write one
-  for your own stack and you stop re-explaining your conventions on every task.
+The scenario is a bicycle plant, but nothing below is specific to manufacturing. Every capability here
+transfers to any domain with a mutating operational source and a metric somebody needs sooner than they
+are getting it. Read the plant as a worked example, not as the subject.
+
+- **Two low-latency paths get operational data into Snowflake, and both land in an open table format.**
+  A managed CDC connector replicates a database including its **updates and deletes**, while a streaming
+  client writes high-volume telemetry beside it. Both target Apache Iceberg on Snowflake-managed
+  storage, so there is no bucket to provision and no IAM role to write. Here: a Postgres MES feed, and
+  per-station sensors at about 60 rows a second.
+- **Dynamic Tables are declarative incremental transformation.** You state the query and a target lag,
+  and Snowflake works out what changed and recomputes only that. No orchestrator, no schedule, no task.
+  Here: four layered Dynamic Iceberg Tables that stay `INCREMENTAL` while the tables underneath them are
+  being rewritten continuously.
+- **A late-arriving correction restates an aggregate that already reported.** This is the hard part of
+  building on a change feed, and the reason to bother: one wrong predicate silently corrupts a metric for
+  ever, and the right one lets history be revised. An append-only pipeline cannot do this — it
+  double-counts the change or drops it. Here: yield rises for a 5-minute bucket that had already closed.
+- **A semantic view is what makes a table answerable in plain language, and a second source is what
+  makes the answer causal.** The agent is only as good as the model beneath it, and one feed can tell you
+  *what* happened but never *why*. Here: the agent ties a sensor drift to a defect spike and gets the
+  order of the two right.
+- **The output is open Apache Iceberg, not a Snowflake format.** Any engine that speaks Iceberg reads the
+  same bytes, with no Snowflake compute in the path. Here: PyIceberg, on your own laptop, in Part 6.
+- **You build all of it by prompting rather than by pasting SQL, and a bundled skill is what makes that
+  reliable.** The skill carries the object model and the conventions, so a one-line prompt produces
+  exactly the right object. Write one for your own stack and you stop re-explaining yourself on every
+  task.
 
 ## What is real, and what is simulated
 
