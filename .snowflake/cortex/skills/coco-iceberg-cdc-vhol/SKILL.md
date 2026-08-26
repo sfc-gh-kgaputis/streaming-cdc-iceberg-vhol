@@ -250,8 +250,15 @@ step numbers here, when you talk to them.
    **Do NOT create `QUALITY_INSPECTIONS`, the journal, or the journal stream.** Those are
    the connector's own objects and it creates them itself on first run — see
    `producer/cdc_simulator.py`, `ensure_objects()`. Creating them by hand is not harmful
-   (the connector uses `IF NOT EXISTS`) but it teaches the wrong division of labour: in
-   production nobody hand-builds a CDC destination table.
+   (the connector uses `IF NOT EXISTS`) but it teaches the wrong division of labour.
+
+   If an attendee asks why they create the telemetry table but not the CDC ones, the answer
+   is that the two ingestion paths genuinely differ: an Openflow connector provisions its own
+   destination tables, while a Snowpipe Streaming client does not — the SDK auto-creates only
+   the pipe, and creating the table is an explicit user step in Snowflake's own streaming
+   quickstart. Do not "fix" the asymmetry by having the simulator create the telemetry table;
+   it is faithful, and `STATION_TELEMETRY` is the one table that *inherits* the Iceberg
+   defaults, which is what the preflight proves.
 
    `SIMULATOR_CONTROL` is the one that gets forgotten, because the attendee's prompt says
    only "the environment and both landing tables". Create it anyway — Part 5 writes to it,

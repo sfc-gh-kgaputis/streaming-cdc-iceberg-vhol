@@ -276,10 +276,22 @@ version. That is the point. It inherits.
 `SHOW TABLES LIKE 'QUALITY_INSPECTIONS' IN SCHEMA MFG.RAW` lists a table that is **not** Iceberg. That
 asymmetry is deliberate — the CDC destination is a standard table because it is rewritten constantly.
 
-Notice what you did **not** create: the CDC destination table, the change journal, or its stream.
-Those belong to the connector, and it creates them for itself when you start it in Part 2 — exactly as
-a real Openflow connector does. You would not hand-build a CDC destination table in production
-either; you point the connector at a source and the objects appear.
+You created **one** data table just now. The connector will create three more for itself when you
+start it in Part 2 — the CDC destination, the change journal and its stream. That split is not
+arbitrary, and it is worth thirty seconds:
+
+| Ingestion path | Who creates the target table |
+|---|---|
+| **Openflow CDC connector** | The **connector**. It "creates the schemas and destination tables matching the source tables" — you point it at a source and the objects appear. |
+| **Snowpipe Streaming client** | **You do.** The SDK auto-creates the *pipe*, never the table. Creating it is step 2 of Snowflake's own streaming quickstart. |
+
+So a managed connector provisions its own destination; a streaming application does not. If you take
+one operational fact home from Part 1, take that one — it decides who owns your schema.
+
+It is also why `STATION_TELEMETRY` above carries **no** `CATALOG`, `EXTERNAL_VOLUME` or
+`ICEBERG_VERSION` clause. It inherits all three, and the preflight is about to prove it did. The
+connector's own DDL does the opposite and states every property explicitly, because it should be
+immune to the trap rather than demonstrating it.
 
 Now verify everything, before building anything on top:
 
