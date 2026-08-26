@@ -129,7 +129,13 @@ Emit the DDL from `references/object_model.md` verbatim. Shapes:
 `AVG_BOOTH_HUMIDITY` is legitimately NULL for WELD and ASSEMBLY — booth humidity
 is a paint-booth metric. Say so if the attendee asks; do not "fix" it.
 
-### The CDC journal — Iceberg v3, connector-internal
+### The CDC journal — Iceberg v3, created BY THE CONNECTOR
+
+**The attendee never creates this, and neither do you.** `producer/openflow_cdc.py`
+creates the journal, its stream and the destination table on first run, with every
+storage property stated explicitly. The DDL below is reference only, for reading and
+for the Part 2 inspection queries.
+
 
 Two objects: `MFG.RAW.QUALITY_INSPECTIONS_JOURNAL_1787700000_1` and its `APPEND_ONLY`
 stream `..._STREAM`. Emit both verbatim from `references/object_model.md`.
@@ -236,23 +242,27 @@ step numbers here, when you talk to them.
      `secret.pat` is missing, ask the attendee to paste their `HOL_PAT` token
      into it first.
 
-1. **Environment + tables — Part 1** — create `MFG`, schemas `RAW` and `ANALYTICS`, the database-level
-   version default, **the three Iceberg defaults on both schemas**, `HOL_WH`, then
-   `QUALITY_INSPECTIONS`, `STATION_TELEMETRY` **and `SIMULATOR_CONTROL`**. `USE SCHEMA`
-   before each Iceberg create. Then run the preflight (Checkpoint P).
+1. **Environment + tables — Part 1** — create `MFG`, schemas `RAW` and `ANALYTICS`, the
+   database-level version default, **the three Iceberg defaults on both schemas**, `HOL_WH`,
+   then exactly two tables: `STATION_TELEMETRY` and `SIMULATOR_CONTROL`. `USE SCHEMA`
+   before the Iceberg create. Then run the preflight (Checkpoint P).
 
-   `SIMULATOR_CONTROL` is easy to forget because the attendee's prompt only mentions
-   the environment and the landing tables. Create it anyway — Part 5 writes to it, and
-   without it the producer logs `[control] read failed` and Part 5's prompt fails on a
-   missing table.
+   **Do NOT create `QUALITY_INSPECTIONS`, the journal, or the journal stream.** Those are
+   the connector's own objects and it creates them itself on first run — see
+   `producer/openflow_cdc.py`, `ensure_objects()`. Creating them by hand is not harmful
+   (the connector uses `IF NOT EXISTS`) but it teaches the wrong division of labour: in
+   production nobody hand-builds a CDC destination table.
 
-2. **CDC journal — Part 1** — create the journal table and its `APPEND_ONLY` stream. Two objects,
-   verbatim from `references/object_model.md`. **No task** — the producer issues the
-   MERGE, because that is what the connector does. Checkpoint J.
+   `SIMULATOR_CONTROL` is the one that gets forgotten, because the attendee's prompt says
+   only "the environment and both landing tables". Create it anyway — Part 5 writes to it,
+   and without it the producer logs `[control] read failed` and Part 5 fails on a missing
+   table.
+
+2. **(nothing here — the connector provisions its own CDC objects in step 3)**
 
 3. **Start the producer — Part 2** — **in the background** (Bash `run_in_background`) with the
    venv interpreter, so it keeps streaming while later layers build:
-   `<venv-python> producer/producer.py --profile producer/profile.json --cdc --telemetry`
+   `<venv-python> producer/main.py --profile producer/profile.json --cdc --telemetry`
    Then Checkpoint I. For the incident (step 7) and the recovery (step 8), stop the
    running producer and restart it with the extra flag.
 
@@ -343,7 +353,7 @@ step numbers here, when you talk to them.
 - **G-gate (the merge gate):** `journal_inserts` exceeds `destination_rows`, and
   `QUERY_HISTORY` filtered on the connector's `QUERY_TAG` shows one MERGE per minute,
   each starting at second :00 and completing in a second or two. Both queries are in
-  `solutions/03_cdc_journal.sql`. The gap is the gate, not the merge.
+  `solutions/03_journal_inspection.sql`. The gap is the gate, not the merge.
 - **D (layer 1):** `SHOW DYNAMIC TABLES IN SCHEMA MFG.ANALYTICS` — every row must read
   `refresh_mode = INCREMENTAL`, `is_iceberg = true`, and an empty
   `refresh_mode_reason`.

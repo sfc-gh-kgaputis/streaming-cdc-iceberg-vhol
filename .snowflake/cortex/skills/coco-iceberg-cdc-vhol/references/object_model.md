@@ -85,29 +85,17 @@ USE WAREHOUSE HOL_WH;
 USE SCHEMA MFG.RAW;
 
 -- ---------------------------------------------------------------------
--- The CDC destination table.
+-- The CDC destination table is NOT created here.
 --
--- This is a STANDARD table, and that is deliberate: it takes UPDATEs and
--- DELETEs continuously, which is the whole point of a change feed. The
--- _SNOWFLAKE_* columns are what the Openflow connector maintains for you.
--- _SNOWFLAKE_DELETED is a SOFT delete -- the connector never removes rows,
--- it flags them, so history survives. Filtering it is your job downstream.
+-- MFG.RAW.QUALITY_INSPECTIONS, the change journal and the journal stream all
+-- belong to the connector, and it creates them itself on first run -- see
+-- producer/openflow_cdc.py, ensure_objects(). That is what a real Openflow
+-- connector does: you point it at a source and the objects appear.
+--
+-- What stays here is what the connector does NOT own: the database, the schemas
+-- and their Iceberg defaults, the warehouse, the telemetry table the attendee
+-- streams into directly, and the simulator's control plane.
 -- ---------------------------------------------------------------------
-CREATE OR REPLACE TABLE MFG.RAW.QUALITY_INSPECTIONS (
-  INSPECTION_ID           STRING,          -- replication key (the Postgres PK)
-  UNIT_ID                 STRING,          -- 'F-000123'
-  LINE                    STRING,          -- WELD | PAINT | ASSEMBLY
-  SKU                     STRING,
-  STATUS                  STRING,          -- PASS | FAIL
-  DEFECT_CODE             STRING,          -- NULL on PASS
-  STATION_ID              STRING,          -- joins to telemetry
-  OPERATOR_ID             STRING,
-  EVENT_TS                TIMESTAMP_NTZ,
-  UPDATED_TS              TIMESTAMP_NTZ,   -- source-system modification time
-  _SNOWFLAKE_INSERTED_AT  TIMESTAMP_NTZ,   -- connector-maintained
-  _SNOWFLAKE_UPDATED_AT   TIMESTAMP_NTZ,   -- connector-maintained
-  _SNOWFLAKE_DELETED      BOOLEAN          -- connector-maintained soft delete
-);
 
 -- ---------------------------------------------------------------------
 -- The simulator's control plane.
@@ -164,14 +152,20 @@ USE SCHEMA MFG.RAW;
 
 ## 2. CDC journal and append-only stream
 
-Source of truth: `solutions/03_cdc_journal.sql`
+> **Created by the connector, not by the attendee.** `producer/openflow_cdc.py`
+> (`ensure_objects()`) creates the destination table, the journal and the stream on first
+> run, as a real Openflow connector does. Everything below is reference: emit it only if
+> someone explicitly asks to see or hand-build the DDL.
+
+
+Source of truth: `solutions/03_journal_inspection.sql`
 
 Two objects only — no task. The MERGE the producer issues is included as a
 commented reference so it can be read and run by hand.
 
 ```sql
 -- =====================================================================
--- 03_cdc_journal.sql   Answer key for Part 1 (build) and Part 2 (inspect)
+-- 03_journal_inspection.sql   Answer key for Part 2 (inspect only -- the connector builds)
 -- =====================================================================
 -- This is the part of the lab that is actually about change data capture.
 --

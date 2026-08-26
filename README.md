@@ -73,15 +73,20 @@ Everything here is **pre-work**. Nothing installs during the session.
 ## Repo layout
 
 ```
-producer/
-  producer.py            the CDC simulator + Snowpipe Streaming producer. Start it once, in Part 2.
+producer/                the data producer. Start it once, in Part 2, and leave it running.
+  main.py                the runner -- this is the file you invoke
+  openflow_cdc.py        the simulated Openflow connector: creates its own objects,
+                         writes the journal, issues the MERGE. Worth reading.
+  telemetry.py           the station sensor feed, straight into Iceberg
+  control.py             polls SIMULATOR_CONTROL, so Part 5 needs no restart
+  common.py              object names, logging, credentials
   requirements.txt       two pinned packages
   profile.example.json   the shape of the profile.json you build in Setup D
 solutions/               the fast path -- finished SQL for every Part, safe to run any time
   00_bootstrap.sql       account settings + the HOL_USER login and its token (Setup B)
   01_environment.sql     database, both schemas, the Iceberg defaults, warehouse, landing tables
   02_preflight.sql       four checks that must all be TRUE before you build anything on top
-  03_cdc_journal.sql     the journal table and its append-only stream
+  03_journal_inspection.sql  look at what the connector built, and the merge gate
   04_dynamic_tables.sql  all four Dynamic Iceberg Tables
   05_semantic_view.sql   PLANT_FLOOR_SV, plus its three checkpoint queries
   06_agent.sql           the Cascade Plant Analyst agent
@@ -207,7 +212,7 @@ needs a virtual environment. Two packages, a few seconds.
 Snowflake:
 
 ```bash
-.venv/bin/python producer/producer.py --dry-run --cdc --seed 42
+.venv/bin/python producer/main.py --dry-run --cdc --seed 42
 ```
 
 Your token is never printed to the chat.
@@ -270,24 +275,10 @@ version. That is the point. It inherits.
 `SHOW TABLES LIKE 'QUALITY_INSPECTIONS' IN SCHEMA MFG.RAW` lists a table that is **not** Iceberg. That
 asymmetry is deliberate — the CDC destination is a standard table because it is rewritten constantly.
 
-Real CDC connectors do not write your destination table directly. They append change events to a
-**journal**, and a merge processor applies that journal on a schedule. Build that too:
-
-**Prompt:**
-
-```text
-Create the CDC journal table and its append-only stream.
-```
-
-Two objects, and deliberately **no task**. The connector does not create one: its merge processor runs
-inside the connector runtime and issues the MERGE itself over its own Snowflake connection, with a
-CRON expression acting as an internal *eligibility gate* (the flow default is second :00 of every
-minute). The producer in this lab does exactly the same thing — so the merge you will watch is issued
-by the simulated connector, not by Snowflake scheduling.
-
-**Checkpoint:** the journal reports Iceberg format version 3, and the stream reports
-`mode = APPEND_ONLY`. You will see the merge itself in Part 2, in query history — issued by the
-connector, not by Snowflake.
+Notice what you did **not** create: the CDC destination table, the change journal, or its stream.
+Those belong to the connector, and it creates them for itself when you start it in Part 2 — exactly as
+a real Openflow connector does. You would not hand-build a CDC destination table in production
+either; you point the connector at a source and the objects appear.
 
 Now verify everything, before building anything on top:
 
@@ -311,6 +302,18 @@ v2 → v3 upgrade, so a wrong answer here gets more expensive with every Part.
 ```text
 Start the producer in the background with both sources, then verify rows are landing.
 ```
+
+**Watch the first three lines it prints.** Before it streams anything, the connector creates its own
+targets and says so:
+
+```
+[connector] destination table ready
+[connector] journal ready
+[connector] journal stream ready
+```
+
+That is the division of labour the lab is teaching. You built the environment and the telemetry table;
+the connector builds the CDC objects. If those three lines are missing, it found them already there.
 
 **You start this once and leave it running for the rest of the lab.** You will never stop it, and
 you will never restart it. That is the point: a streaming pipeline is something you turn on and
@@ -667,7 +670,7 @@ You never need to edit it. Run it with the venv interpreter so it finds the SDK 
 You start it **once**, in Part 2, with both sources:
 
 ```bash
-.venv/bin/python producer/producer.py --profile producer/profile.json --cdc --telemetry
+.venv/bin/python producer/main.py --profile producer/profile.json --cdc --telemetry
 ```
 
 That is the only command the lab asks you to run. The incident and the recovery are triggered by
@@ -675,7 +678,7 @@ writing to `MFG.RAW.SIMULATOR_CONTROL` while it keeps streaming — see Part 5.
 
 ```bash
 # see what it generates, no Snowflake account needed
-.venv/bin/python producer/producer.py --dry-run --cdc --seed 42
+.venv/bin/python producer/main.py --dry-run --cdc --seed 42
 ```
 
 `--incident` and `--reinspect` also exist as startup flags, and `--no-control` ignores the control

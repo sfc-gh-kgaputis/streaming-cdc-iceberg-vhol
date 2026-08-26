@@ -65,29 +65,17 @@ USE WAREHOUSE HOL_WH;
 USE SCHEMA MFG.RAW;
 
 -- ---------------------------------------------------------------------
--- The CDC destination table.
+-- The CDC destination table is NOT created here.
 --
--- This is a STANDARD table, and that is deliberate: it takes UPDATEs and
--- DELETEs continuously, which is the whole point of a change feed. The
--- _SNOWFLAKE_* columns are what the Openflow connector maintains for you.
--- _SNOWFLAKE_DELETED is a SOFT delete -- the connector never removes rows,
--- it flags them, so history survives. Filtering it is your job downstream.
+-- MFG.RAW.QUALITY_INSPECTIONS, the change journal and the journal stream all
+-- belong to the connector, and it creates them itself on first run -- see
+-- producer/openflow_cdc.py, ensure_objects(). That is what a real Openflow
+-- connector does: you point it at a source and the objects appear.
+--
+-- What stays here is what the connector does NOT own: the database, the schemas
+-- and their Iceberg defaults, the warehouse, the telemetry table the attendee
+-- streams into directly, and the simulator's control plane.
 -- ---------------------------------------------------------------------
-CREATE OR REPLACE TABLE MFG.RAW.QUALITY_INSPECTIONS (
-  INSPECTION_ID           STRING,          -- replication key (the Postgres PK)
-  UNIT_ID                 STRING,          -- 'F-000123'
-  LINE                    STRING,          -- WELD | PAINT | ASSEMBLY
-  SKU                     STRING,
-  STATUS                  STRING,          -- PASS | FAIL
-  DEFECT_CODE             STRING,          -- NULL on PASS
-  STATION_ID              STRING,          -- joins to telemetry
-  OPERATOR_ID             STRING,
-  EVENT_TS                TIMESTAMP_NTZ,
-  UPDATED_TS              TIMESTAMP_NTZ,   -- source-system modification time
-  _SNOWFLAKE_INSERTED_AT  TIMESTAMP_NTZ,   -- connector-maintained
-  _SNOWFLAKE_UPDATED_AT   TIMESTAMP_NTZ,   -- connector-maintained
-  _SNOWFLAKE_DELETED      BOOLEAN          -- connector-maintained soft delete
-);
 
 -- ---------------------------------------------------------------------
 -- The simulator's control plane.

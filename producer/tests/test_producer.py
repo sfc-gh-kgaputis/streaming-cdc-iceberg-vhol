@@ -14,7 +14,30 @@ from __future__ import annotations
 import time
 from types import SimpleNamespace
 
-import producer as p
+import openflow_cdc
+import telemetry
+
+
+class _Ns:
+    """The symbols under test now live in three modules. This keeps the test body
+    unchanged and readable while making where each thing lives explicit."""
+
+    BASE_DEFECT_RATE = openflow_cdc.BASE_DEFECT_RATE
+    INCIDENT_DEFECT_RATE = openflow_cdc.INCIDENT_DEFECT_RATE
+    CdcSimulator = openflow_cdc.CdcSimulator
+    CdcSink = openflow_cdc.CdcSink
+    journal_event = staticmethod(openflow_cdc.journal_event)
+    EV_INSERT = openflow_cdc.EV_INSERT
+    EV_UPDATE = openflow_cdc.EV_UPDATE
+    EV_DELETE = openflow_cdc.EV_DELETE
+    SOURCE_COLUMNS = openflow_cdc.SOURCE_COLUMNS
+    TelemetrySimulator = telemetry.TelemetrySimulator
+    DryRunTelemetrySink = telemetry.DryRunTelemetrySink
+    METRICS = telemetry.METRICS
+    INCIDENT_HUMIDITY = telemetry.INCIDENT_HUMIDITY
+
+
+p = _Ns
 
 # ---------------------------------------------------------------------------
 # Helpers

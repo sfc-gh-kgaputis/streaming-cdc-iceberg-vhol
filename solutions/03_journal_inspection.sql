@@ -1,98 +1,23 @@
 -- =====================================================================
--- 03_cdc_journal.sql   Answer key for Part 1 (build) and Part 2 (inspect)
+-- 03_journal_inspection.sql   Answer key for Part 2
 -- =====================================================================
--- This is the part of the lab that is actually about change data capture.
+-- You do NOT create the journal, its stream, or the destination table. The
+-- connector creates all three for itself when you start it in Part 2, exactly as
+-- a real Openflow connector does -- see producer/openflow_cdc.py, ensure_objects().
 --
--- The Openflow PostgreSQL CDC connector does NOT write your destination table
--- directly. It writes a JOURNAL -- an append-only log of change events -- and a
--- merge processor applies that journal to the destination.
+-- This file is what you use to LOOK at what it built and what it is doing:
+-- the change events, the three event shapes, the SF_METADATA quirk, and above all
+-- the merge gate.
 --
--- IMPORTANT, because it is easy to assume otherwise: the connector does **not**
--- create a Snowflake TASK. Its merge processor runs inside the connector runtime
--- and issues the MERGE itself, over its own Snowflake connection. A CRON
--- expression acts as an internal *eligibility gate* deciding when queued changes
--- become mergeable -- the flow default is `0 * * * * ?`, second :00 of every
--- minute. So in this lab the producer issues the MERGE too, on the same gate.
--- There is no task to create here, and you should not add one.
---
--- Three observable behaviours come out of that design, and all three are worth
--- seeing:
---
---   1. Soft deletes. A voided row is flagged, never removed.
---   2. A merge gate. The destination lags the journal by up to a minute, and
---      that lag is a *scheduling* decision, not a throughput limit.
---   3. Two paths. The initial snapshot loads the destination directly; ongoing
---      changes go through the journal. Same table, two very different writers.
---
--- You INSPECT the journal in this lab. You never build Dynamic Tables on it --
--- it is connector-internal, its schema shifts with the generation counter, and
--- the connector prunes it. Build on the destination table.
+-- The DDL used to live here. It moved into the connector because having attendees
+-- hand-build a CDC destination table taught the wrong division of labour: in
+-- production nobody does that, you point the connector at a source and the objects
+-- appear.
 -- =====================================================================
 
 USE ROLE ACCOUNTADMIN;
 USE WAREHOUSE HOL_WH;
-USE SCHEMA MFG.RAW;          -- required before any Iceberg CREATE; see 01_environment.sql
-
--- ---------------------------------------------------------------------
--- The journal table.
---
--- Naming is the connector's: "<TABLE>_JOURNAL_<series>_<generation>", where
--- series is epoch seconds at table registration and generation starts at 1 and
--- increments on every schema-changing DDL. Only the highest generation is
--- active. We PIN the series here so the lab has stable object names; in
--- production you cannot predict it, which is part of why you never build
--- anything durable on the journal.
---
--- Column order is the connector's and matters:
---   PRIMARY_KEY__<col>  one per replication key column, NOT NULL
---   PAYLOAD__<col>      one per EVERY source column, including the key
---   LEAST_/MOST_SIGNIFICANT_POSITION   the WAL position, used for ordering
---   EVENT_TYPE, SEEN_AT, SF_METADATA
---
--- The key appears TWICE, as PRIMARY_KEY__INSPECTION_ID and PAYLOAD__INSPECTION_ID. That is
--- deliberate: it is what makes a primary-key change detectable
--- (PRIMARY_KEY__k <> PAYLOAD__k). This lab's key never changes, so the MERGE
--- below omits the key-change machinery -- see the note at the end.
---
--- SF_METADATA is VARIANT, which is exactly why this table needs Iceberg v3.
--- ICEBERG_VERSION = 3 is stated explicitly rather than inherited, because a
--- silent fall back to v2 here fails with "Unsupported data type 'VARIANT'".
--- ---------------------------------------------------------------------
-CREATE OR REPLACE ICEBERG TABLE MFG.RAW.QUALITY_INSPECTIONS_JOURNAL_1787700000_1 (
-  PRIMARY_KEY__INSPECTION_ID        STRING        NOT NULL,
-  PAYLOAD__INSPECTION_ID            STRING,
-  PAYLOAD__UNIT_ID           STRING,
-  PAYLOAD__LINE               STRING,
-  PAYLOAD__SKU                STRING,
-  PAYLOAD__STATUS             STRING,
-  PAYLOAD__DEFECT_CODE        STRING,
-  PAYLOAD__STATION_ID         STRING,
-  PAYLOAD__OPERATOR_ID        STRING,
-  PAYLOAD__EVENT_TS           TIMESTAMP_NTZ,
-  PAYLOAD__UPDATED_TS         TIMESTAMP_NTZ,
-  LEAST_SIGNIFICANT_POSITION  NUMBER(38,0),   -- bare NUMBER is rejected by Iceberg
-  MOST_SIGNIFICANT_POSITION   NUMBER(38,0),
-  EVENT_TYPE                  STRING        NOT NULL,
-  SEEN_AT                     TIMESTAMP_NTZ,
-  SF_METADATA                 VARIANT
-)
-  ICEBERG_VERSION = 3
-  ERROR_LOGGING = TRUE;      -- the connector sets this; bad rows land in an error table
-
--- ---------------------------------------------------------------------
--- The stream. APPEND_ONLY, because a journal only ever gets appends.
---
--- Reading the STREAM rather than the table is what gives exactly-once: the
--- offset advances only when the consuming DML commits. Note that append-only
--- streams on *externally managed* Iceberg tables are unsupported -- on
--- Snowflake-managed v3, as here, they work.
--- ---------------------------------------------------------------------
-CREATE OR REPLACE STREAM MFG.RAW.QUALITY_INSPECTIONS_JOURNAL_1787700000_1_STREAM
-  ON TABLE MFG.RAW.QUALITY_INSPECTIONS_JOURNAL_1787700000_1
-  APPEND_ONLY = TRUE;
-
--- That is all the DDL. Two objects. No task, no pipe.
-
+USE SCHEMA MFG.RAW;
 
 -- =====================================================================
 -- THE MERGE -- for reference, and to run by hand
