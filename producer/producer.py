@@ -134,51 +134,99 @@ REINSPECT_FRACTION = 0.4
 
 
 # The lab identity is pinned, not discovered. A PAT is bound to the user it was
-# minted for, so if profile.json names anyone else authentication fails with an
+# minted for, so if profile.json names anyone else, authentication fails with an
 # error that mentions neither the user nor the token. Observed 26 Aug: a Desktop
 # run wrote the *connected* user (the signup admin) into profile.json instead of
-# the lab user, because CURRENT_USER() was queried rather than the value being
-# set literally.
+# the lab user, because CURRENT_USER() was queried rather than set literally.
 LAB_USER = "HOL_USER"
 
 
-def repair_profile(profile_path: str) -> dict[str, Any]:
-    """Load profile.json, and correct the two fields that are known to drift.
+def _credential_works(profile: dict[str, Any]) -> bool:
+    """Can we actually authenticate with this profile? One cheap round trip."""
+    try:
+        cn = connect_sql(profile)
+    except Exception:
+        return False
+    try:
+        cur = cn.cursor()
+        cur.execute("SELECT CURRENT_USER()")
+        return (cur.fetchone() or [None])[0] is not None
+    except Exception:
+        return False
+    finally:
+        cn.close()
 
-    The Snowpipe Streaming SDK reads this file itself (`profile_json=`), so the
-    file has to be right -- pinning the values in Python is not enough.
 
-    Two drifts are corrected, both seen in practice:
+def repair_profile(profile_path: str, verify: bool = True) -> dict[str, Any]:
+    """Verify profile.json, and repair it ONLY if a candidate fix actually works.
 
-    * `user` naming anyone other than the lab user. A PAT only works for its own
-      user, so this is always wrong.
-    * a stale token, after `ALTER USER ... ROTATE PROGRAMMATIC ACCESS TOKEN`.
-      Rotation mints a new secret under the original token name and leaves the old
-      one alive on a 24h grace, so a stale profile keeps working right up until it
-      abruptly does not. `secret.pat` is the source of truth.
+    Deliberately never repairs blind. An earlier version pinned the user and took
+    `secret.pat` as the source of truth unconditionally, which is wrong in both
+    directions: it would clobber a deliberately different user, and -- worse -- a
+    stale `secret.pat` would overwrite a *working* token and break a setup that was
+    fine. So the order is: try what is on disk, and only change it if a candidate
+    both differs and authenticates.
+
+    The Snowpipe Streaming SDK reads this file itself (`profile_json=`), so a fix
+    has to land on disk; pinning values in Python is not enough.
     """
     path = pathlib.Path(profile_path)
     profile = json.loads(path.read_text())
-    fixed = []
+
+    if not verify:
+        return profile
+
+    if _credential_works(profile):
+        return profile
+
+    log("[profile] cannot authenticate with profile.json as written -- trying known fixes")
+
+    # Candidate repairs, narrowest first. Each is only accepted if it authenticates.
+    candidates: list[tuple[str, dict[str, Any]]] = []
 
     if profile.get("user") != LAB_USER:
-        log(f"[profile] user was {profile.get('user')!r}; the PAT belongs to {LAB_USER}")
-        profile["user"] = LAB_USER
-        fixed.append("user")
+        c = dict(profile)
+        c["user"] = LAB_USER
+        candidates.append((f"user {profile.get('user')!r} -> {LAB_USER!r}", c))
 
-    secret = pathlib.Path(path.parent.parent / "secret.pat")
+    secret = path.parent.parent / "secret.pat"
     if secret.exists():
         token = secret.read_text().strip()
         if token and token != profile.get("personal_access_token"):
-            log("[profile] token differed from secret.pat; taking secret.pat as truth")
-            profile["personal_access_token"] = token
-            fixed.append("token")
+            c = dict(profile)
+            c["personal_access_token"] = token
+            candidates.append(("token -> the one in secret.pat", c))
+            if profile.get("user") != LAB_USER:
+                c2 = dict(c)
+                c2["user"] = LAB_USER
+                candidates.append((f"user -> {LAB_USER!r} AND token -> secret.pat", c2))
 
-    if fixed:
-        path.write_text(json.dumps(profile, indent=2) + "\n")
-        log(f"[profile] rewrote {path} ({', '.join(fixed)})")
+    for label, candidate in candidates:
+        if _credential_works(candidate):
+            path.write_text(json.dumps(candidate, indent=2) + "\n")
+            log("")
+            log("[profile] WARNING: profile.json was wrong and has been REPAIRED IN PLACE.")
+            log(f"[profile] WARNING: changed {label}.")
+            log("[profile] WARNING: Setup D produced a profile that could not authenticate.")
+            log("[profile] WARNING: worth reporting -- the lab should not need this.")
+            log("")
+            return candidate
 
-    return profile
+    # Nothing worked. Say precisely what was tried, because the SDK's own error
+    # will not mention the user, the token or the account.
+    log("")
+    log("[profile] FATAL: could not authenticate, and no known repair worked.")
+    log(f"[profile]   account : {profile.get('account')}")
+    log(f"[profile]   user    : {profile.get('user')}  (the PAT must belong to this user)")
+    log(f"[profile]   token   : {'present' if profile.get('personal_access_token') else 'MISSING'}"
+        f" in profile.json, secret.pat {'exists' if secret.exists() else 'MISSING'}")
+    log("[profile] Check, in order:")
+    log("[profile]   1. secret.pat holds the token_secret from Setup B, whole and unwrapped")
+    log(f"[profile]   2. that token was minted for {LAB_USER}, not for your signup admin")
+    log("[profile]   3. it has not expired -- tokens last 7 days; re-mint or ROTATE in Snowsight")
+    log("[profile]   4. account is your trial account, not another one you have a connection to")
+    log("")
+    raise SystemExit(2)
 
 
 def connect_sql(profile: dict[str, Any], query_tag: str | None = None) -> Any:
