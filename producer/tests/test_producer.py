@@ -14,7 +14,7 @@ from __future__ import annotations
 import time
 from types import SimpleNamespace
 
-import openflow_cdc
+import cdc_simulator
 import telemetry
 
 
@@ -22,15 +22,15 @@ class _Ns:
     """The symbols under test now live in three modules. This keeps the test body
     unchanged and readable while making where each thing lives explicit."""
 
-    BASE_DEFECT_RATE = openflow_cdc.BASE_DEFECT_RATE
-    INCIDENT_DEFECT_RATE = openflow_cdc.INCIDENT_DEFECT_RATE
-    CdcSimulator = openflow_cdc.CdcSimulator
-    CdcSink = openflow_cdc.CdcSink
-    journal_event = staticmethod(openflow_cdc.journal_event)
-    EV_INSERT = openflow_cdc.EV_INSERT
-    EV_UPDATE = openflow_cdc.EV_UPDATE
-    EV_DELETE = openflow_cdc.EV_DELETE
-    SOURCE_COLUMNS = openflow_cdc.SOURCE_COLUMNS
+    BASE_DEFECT_RATE = cdc_simulator.BASE_DEFECT_RATE
+    INCIDENT_DEFECT_RATE = cdc_simulator.INCIDENT_DEFECT_RATE
+    CdcSimulator = cdc_simulator.CdcSimulator
+    CdcSink = cdc_simulator.CdcSink
+    journal_event = staticmethod(cdc_simulator.journal_event)
+    EV_INSERT = cdc_simulator.EV_INSERT
+    EV_UPDATE = cdc_simulator.EV_UPDATE
+    EV_DELETE = cdc_simulator.EV_DELETE
+    SOURCE_COLUMNS = cdc_simulator.SOURCE_COLUMNS
     TelemetrySimulator = telemetry.TelemetrySimulator
     DryRunTelemetrySink = telemetry.DryRunTelemetrySink
     METRICS = telemetry.METRICS

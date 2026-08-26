@@ -75,7 +75,7 @@ Everything here is **pre-work**. Nothing installs during the session.
 ```
 producer/                the data producer. Start it once, in Part 2, and leave it running.
   main.py                the runner -- this is the file you invoke
-  openflow_cdc.py        the simulated Openflow connector: creates its own objects,
+  cdc_simulator.py       the simulated Openflow connector: creates its own objects,
                          writes the journal, issues the MERGE. Worth reading.
   telemetry.py           the station sensor feed, straight into Iceberg
   control.py             polls SIMULATOR_CONTROL, so Part 5 needs no restart
@@ -84,7 +84,8 @@ producer/                the data producer. Start it once, in Part 2, and leave 
   profile.example.json   the shape of the profile.json you build in Setup D
 solutions/               the fast path -- finished SQL for every Part, safe to run any time
   00_bootstrap.sql       account settings + the HOL_USER login and its token (Setup B)
-  01_environment.sql     database, both schemas, the Iceberg defaults, warehouse, landing tables
+  01_environment.sql     database, both schemas + Iceberg defaults, warehouse, telemetry table,
+                         control table. NOT the CDC objects -- the connector makes those.
   02_preflight.sql       four checks that must all be TRUE before you build anything on top
   03_journal_inspection.sql  look at what the connector built, and the merge gate
   04_dynamic_tables.sql  all four Dynamic Iceberg Tables

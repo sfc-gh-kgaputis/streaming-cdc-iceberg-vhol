@@ -89,7 +89,7 @@ USE SCHEMA MFG.RAW;
 --
 -- MFG.RAW.QUALITY_INSPECTIONS, the change journal and the journal stream all
 -- belong to the connector, and it creates them itself on first run -- see
--- producer/openflow_cdc.py, ensure_objects(). That is what a real Openflow
+-- producer/cdc_simulator.py, ensure_objects(). That is what a real Openflow
 -- connector does: you point it at a source and the objects appear.
 --
 -- What stays here is what the connector does NOT own: the database, the schemas
@@ -152,7 +152,7 @@ USE SCHEMA MFG.RAW;
 
 ## 2. CDC journal and append-only stream
 
-> **Created by the connector, not by the attendee.** `producer/openflow_cdc.py`
+> **Created by the connector, not by the attendee.** `producer/cdc_simulator.py`
 > (`ensure_objects()`) creates the destination table, the journal and the stream on first
 > run, as a real Openflow connector does. Everything below is reference: emit it only if
 > someone explicitly asks to see or hand-build the DDL.

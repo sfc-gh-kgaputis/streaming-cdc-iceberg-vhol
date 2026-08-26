@@ -2,7 +2,7 @@
 
 Two independent feeds into one Snowflake account:
 
-  --cdc        the simulated Openflow Postgres CDC connector (openflow_cdc.py)
+  --cdc        the simulated Openflow Postgres CDC connector (cdc_simulator.py)
   --telemetry  station sensors over Snowpipe Streaming (telemetry.py)
 
 Start it ONCE, in Part 2, and leave it running for the rest of the lab. Part 5
@@ -20,9 +20,7 @@ import signal
 import threading
 from typing import Any
 
-from common import JOURNAL_DB, JOURNAL_SCHEMA, JOURNAL_TABLE, _stop, log, repair_profile
-from control import arm_incident, control_loop
-from openflow_cdc import (
+from cdc_simulator import (
     CdcSimulator,
     DirectDmlSink,
     DryRunCdcSink,
@@ -31,6 +29,8 @@ from openflow_cdc import (
     ensure_objects,
     merge_loop,
 )
+from common import JOURNAL_DB, JOURNAL_SCHEMA, JOURNAL_TABLE, _stop, log, repair_profile
+from control import arm_incident, control_loop
 from telemetry import DryRunTelemetrySink, TelemetrySimulator, TelemetrySink, telemetry_loop
 
 

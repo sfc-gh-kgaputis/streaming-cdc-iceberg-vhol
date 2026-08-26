@@ -3,7 +3,7 @@
 -- =====================================================================
 -- You do NOT create the journal, its stream, or the destination table. The
 -- connector creates all three for itself when you start it in Part 2, exactly as
--- a real Openflow connector does -- see producer/openflow_cdc.py, ensure_objects().
+-- a real Openflow connector does -- see producer/cdc_simulator.py, ensure_objects().
 --
 -- This file is what you use to LOOK at what it built and what it is doing:
 -- the change events, the three event shapes, the SF_METADATA quirk, and above all

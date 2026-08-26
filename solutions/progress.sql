@@ -21,7 +21,7 @@
 -- generation increments on every source schema change. This lab PINS that
 -- suffix to 1787700000_1 on purpose, so every attendee has the same object
 -- name and the skill can reference it -- see the comment on JOURNAL_SERIES in
--- producer/openflow_cdc.py. Matching by prefix anyway, because that is the habit
+-- producer/cdc_simulator.py. Matching by prefix anyway, because that is the habit
 -- that survives contact with a real connector, where it is not predictable.
 -- It is also why you build Dynamic Tables on the destination table and never
 -- on the journal.

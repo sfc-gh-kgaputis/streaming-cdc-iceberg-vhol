@@ -131,7 +131,7 @@ is a paint-booth metric. Say so if the attendee asks; do not "fix" it.
 
 ### The CDC journal — Iceberg v3, created BY THE CONNECTOR
 
-**The attendee never creates this, and neither do you.** `producer/openflow_cdc.py`
+**The attendee never creates this, and neither do you.** `producer/cdc_simulator.py`
 creates the journal, its stream and the destination table on first run, with every
 storage property stated explicitly. The DDL below is reference only, for reading and
 for the Part 2 inspection queries.
@@ -249,7 +249,7 @@ step numbers here, when you talk to them.
 
    **Do NOT create `QUALITY_INSPECTIONS`, the journal, or the journal stream.** Those are
    the connector's own objects and it creates them itself on first run — see
-   `producer/openflow_cdc.py`, `ensure_objects()`. Creating them by hand is not harmful
+   `producer/cdc_simulator.py`, `ensure_objects()`. Creating them by hand is not harmful
    (the connector uses `IF NOT EXISTS`) but it teaches the wrong division of labour: in
    production nobody hand-builds a CDC destination table.
 
