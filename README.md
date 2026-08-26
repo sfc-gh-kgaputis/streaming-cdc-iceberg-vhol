@@ -677,6 +677,7 @@ counted at their natural grain and ranked at read time instead.
 | Agent answers with stale numbers | The pipeline lags 1–2 min by design | Ask again in a minute. "Right now" means the most recent complete buckets. |
 | Agent errors or lists no models | Cross-region inference disabled | See `cortex_ok` above. |
 | Agent: *"not an allowed model for Agent"* | A specific orchestration model was pinned | Use `"orchestration": "auto"`. Agent orchestration has a narrower allowed-models list than Cortex `COMPLETE`. |
+| Part 6: `ModuleNotFoundError: No module named 'pyiceberg'` | The script ran on system Python, or Setup D installed only the producer's requirements | Run it with the venv interpreter, `.venv/bin/python external/read_iceberg.py`. If the import still fails, `.venv/bin/pip install -r external/requirements.txt`. |
 | External read: 401 with an empty body | A PAT presented directly as a Bearer token. It must be exchanged for an access token first | `external/read_iceberg.py` does the exchange. If you wrote your own, see the comments in it. |
 | External read: `OAuthError: unauthorized_client` | PyIceberg's `credential` property formats the request in a way Horizon rejects | Pass `token=<access_token>` instead. |
 | External read: HTTP 404 on the catalog | Catalog or namespace name is lower-case | Uppercase them. `warehouse=` is the **database** name, uppercase. |
