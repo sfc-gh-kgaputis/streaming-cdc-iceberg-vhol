@@ -98,35 +98,14 @@ Everything here is **pre-work**. Nothing installs during the session.
 
 ## Repo layout
 
-```
-producer/                the data producer. Start it once, in Part 2, and leave it running.
-  main.py                the runner -- this is the file you invoke
-  cdc_simulator.py       the simulated Openflow connector: creates its own objects,
-                         writes the journal, issues the MERGE. Worth reading.
-  telemetry.py           the station sensor feed, straight into Iceberg
-  control.py             polls SIMULATOR_CONTROL, so Part 5 needs no restart
-  common.py              object names, logging, credentials
-  requirements.txt       two pinned packages
-  profile.example.json   the shape of the profile.json you build in Setup D
-solutions/               the fast path -- finished SQL for every Part, safe to run any time
-  00_bootstrap.sql       account settings + the HOL_USER login and its token (Setup B)
-  01_environment.sql     database, both schemas + Iceberg defaults, warehouse, telemetry table,
-                         control table. NOT the CDC objects -- the connector makes those.
-  02_preflight.sql       four checks that must all be TRUE before you build anything on top
-  03_journal_inspection.sql  look at what the connector built, and the merge gate
-  04_dynamic_tables.sql  all four Dynamic Iceberg Tables
-  05_semantic_view.sql   PLANT_FLOOR_SV, plus its three checkpoint queries
-  06_agent.sql           the Cascade Plant Analyst agent
-  progress.sql           "where am I" -- every object, built or not, with row counts
-  09_cleanup.sql         stop the spend, then optionally remove everything
-external/
-  read_iceberg.py        read the Gold table from your laptop via PyIceberg. Optional act A.
-docs/
-  architecture.svg       the diagram at the top of this file
-  agent_questions.md     the three agent questions, verbatim
-dashboard/               the live dashboard the presenter shares on screen. Not a lab step.
-.snowflake/              a Cortex Code skill that loads automatically (see the last section)
-```
+| | |
+|---|---|
+| `producer/` | The data producer. You start it once, in Part 2, and leave it running. `main.py` is the file you invoke; `cdc_simulator.py` is the simulated connector, and is worth reading. |
+| `solutions/` | The fast path — finished SQL for every Part, numbered to match, safe to run at any time. Plus `progress.sql` ("where am I?") and `09_cleanup.sql`. |
+| `external/` | Optional act A: read your Iceberg tables from your laptop. |
+| `docs/` | The architecture diagram, and the three agent questions. |
+| `dashboard/` | The live dashboard the presenter shares on screen. Not a lab step. |
+| `.snowflake/` | Two Cortex Code skills that load automatically — see [How the skills work](#how-the-skills-work). |
 
 ---
 
@@ -213,16 +192,17 @@ SELECT CURRENT_ORGANIZATION_NAME() || '-' || CURRENT_ACCOUNT_NAME() AS account_i
 Add a connection using the `account_identifier` from above, user `HOL_USER`, and your token from
 `secret.pat` as the credential. Role `ACCOUNTADMIN`.
 
-Then confirm it:
+Then confirm it. This first prompt is also the one place the lab shows you **naming a skill
+explicitly** with `$` — see [How the skills work](#how-the-skills-work):
 
 **Prompt:**
 
 ```text
-Test my Snowflake connection and confirm the lab skill is loaded.
+$streaming-cdc-iceberg-lab Test my connection and confirm you loaded.
 ```
 
 **Checkpoint:** user comes back as `HOL_USER`, role `ACCOUNTADMIN`, region starts with `AWS_`, and
-Cortex Code names the `coco-iceberg-cdc-vhol` skill as active.
+Cortex Code names the `streaming-cdc-iceberg-lab` skill as active.
 
 ## D. Set up the producer environment
 
@@ -656,6 +636,15 @@ This one ships pre-written rather than prompted, deliberately. The auth path has
 that are not in the PyIceberg docs, and a broken first draft would cost more than it teaches. Read the
 script — it is 100 lines and the comments explain both traps.
 
+It has its own skill, so if you want it to walk you through instead, name that skill directly. This is
+the second and last place the lab uses `$`:
+
+**Prompt:**
+
+```text
+$iceberg-external-read Walk me through reading the Gold table.
+```
+
 **Checkpoint:** it prints Iceberg format version `v3`, a storage path under Snowflake's managed bucket
 (`s3://sfc-…-customer-interop-fs-…`), your rows, and a smaller row count after predicate pushdown on
 `LINE == 'PAINT'`.
@@ -745,16 +734,38 @@ using them means stopping the producer, which is the one thing this design avoid
   no stream, no merge gate. Use it only if the journal objects are missing and you need rows flowing
   to catch up; it loses the merge gate and the two-path design.
 
-# How the skill knows all this
+# How the skills work
 
-`.snowflake/cortex/skills/coco-iceberg-cdc-vhol/` holds a Cortex Code **skill**: the object model, the
-measured Iceberg constraints, the checkpoints, and the rules for building each layer. Cortex Code loads
-it automatically when you open this folder, which is why a one-line prompt produces exactly the right
-table. It keeps no copy of the DDL — it points at `solutions/`, so there is only ever one version of
-any statement.
+`.snowflake/cortex/skills/` holds two Cortex Code **skills**. Both load **automatically** when you open
+this folder — there is nothing to install, and nothing to type.
 
-Open `SKILL.md` and read it. Writing one for your own stack is the most transferable thing you will
-take away from this lab — it is how you stop re-explaining your conventions to an agent on every task.
+| Skill | What it carries |
+|---|---|
+| `streaming-cdc-iceberg-lab` | The object model, the measured Iceberg constraints, every checkpoint, and the rules for building each layer. This is why a one-line prompt produces exactly the right table. |
+| `iceberg-external-read` | Optional act A only: the Horizon catalog auth path and its two traps. Separate because it is a standalone activity that nothing else depends on. |
+
+Neither keeps a copy of the DDL. Both point at `solutions/`, so there is only ever one version of any
+statement.
+
+**Why a skill matters more than it sounds.** A prompt like *"Run the preflight checks"* contains no
+object names, no schema, no Iceberg settings. It works because the skill already put all of that in
+context. Writing one for your own stack is the most transferable thing you will take away from this
+lab — it is how you stop re-explaining your conventions to an agent on every task.
+
+**Naming a skill with `$`.** Auto-loading is the mechanism here, so almost every prompt in this lab is
+plain English. But you can always name a skill explicitly, and the lab does it twice on purpose — in
+Setup C and in Optional A — so you have seen the syntax:
+
+```text
+$streaming-cdc-iceberg-lab <your request>
+```
+
+Two things worth knowing. It is a **fallback, never a requirement**: both skills auto-load anyway, so
+if you mistype the name nothing breaks and the work still happens. And it is the lever for getting
+back on track — if a prompt ever produces the wrong object name or ignores a constraint, prefix your
+next one with `$streaming-cdc-iceberg-lab` to force the lab's own rules to the front.
+
+Open `SKILL.md` and read it.
 
 # Cleanup
 

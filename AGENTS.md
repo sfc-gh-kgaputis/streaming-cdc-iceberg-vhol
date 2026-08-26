@@ -7,9 +7,11 @@ hands-on lab. Setup, the walkthrough, and troubleshooting are in
 ## Working in this repo
 
 - You build the pipeline by **prompting Cortex Code**, not by writing SQL yourself.
-  A skill in `.snowflake/cortex/skills/coco-iceberg-cdc-vhol/` loads automatically
-  when you open this folder and supplies the exact object names, Iceberg settings,
-  and checkpoint queries each part expects.
+  Two skills in `.snowflake/cortex/skills/` load automatically when you open this
+  folder: `streaming-cdc-iceberg-lab` supplies the object names, Iceberg settings
+  and checkpoint queries every part expects, and `iceberg-external-read` covers
+  Optional act A. Nothing to install. You can name either explicitly with `$`, but
+  you never have to.
 - **Use the object names the skill gives you.** Later parts and every checkpoint
   query depend on them.
 - `solutions/` is the answer key, one file per part. Read it whenever you want — it
