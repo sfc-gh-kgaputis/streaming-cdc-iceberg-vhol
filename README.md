@@ -7,8 +7,9 @@ capture from an operational database lands in **Apache Iceberg** tables, **Dynam
 continuously, and an **AI agent** explains what is happening on the plant floor. You build it by
 prompting **Cortex Code**, not by pasting SQL.
 
-Everything you paste is a *prompt*. There is also a **fast path**: every step has its finished SQL in
-`solutions/`, and running it is a legitimate way to do this lab, not a confession.
+Every block labelled **Prompt** is something you paste into **Cortex Code** — not SQL, not a shell
+command. Use the copy button in its top-right corner. Blocks labelled **Fast path** are finished SQL
+for the same step, and running one is a legitimate way to do this lab, not a confession.
 
 Use whichever fits where you are. If you are behind, run the file and catch up — you will still see
 every checkpoint. If you are ahead, prompt for it and read what Cortex Code produces. Nobody should
@@ -171,14 +172,22 @@ Add a connection using the `account_identifier` from above, user `HOL_USER`, and
 
 Then confirm it:
 
-> Test my Snowflake connection: report the current user, role, account and region, and confirm the coco-iceberg-cdc-vhol skill is loaded.
+**Prompt:**
+
+```text
+Test my Snowflake connection and confirm the lab skill is loaded.
+```
 
 **Checkpoint:** user comes back as `HOL_USER`, role `ACCOUNTADMIN`, region starts with `AWS_`, and
 Cortex Code names the `coco-iceberg-cdc-vhol` skill as active.
 
 ## D. Set up the producer environment
 
-> Set up the data producer environment: the venv, and producer/profile.json.
+**Prompt:**
+
+```text
+Set up the data producer environment: the venv, and producer/profile.json.
+```
 
 The skill handles the rest — detecting your OS, using the right interpreter path for it, and why macOS
 needs a virtual environment. Two packages, a few seconds.
@@ -215,7 +224,11 @@ This is a good place to use **Plan Mode** (`Shift+Tab` in Cortex Code) — it ma
 the whole sequence before it executes anything, so you can see the `USE SCHEMA` statements below in
 context. This is the one Part where that is worth the extra step.
 
-> Create the lab environment and both landing tables.
+**Prompt:**
+
+```text
+Create the lab environment and both landing tables.
+```
 
 Two schemas, and the split is the shape of the pipeline rather than the shape of the feeds:
 
@@ -249,7 +262,11 @@ asymmetry is deliberate — the CDC destination is a standard table because it i
 Real CDC connectors do not write your destination table directly. They append change events to a
 **journal**, and a merge processor applies that journal on a schedule. Build that too:
 
-> Create the CDC journal table and its append-only stream.
+**Prompt:**
+
+```text
+Create the CDC journal table and its append-only stream.
+```
 
 Two objects, and deliberately **no task**. The connector does not create one: its merge processor runs
 inside the connector runtime and issues the MERGE itself over its own Snowflake connection, with a
@@ -262,7 +279,11 @@ step — and it is the single most common thing to get wrong about how Openflow 
 
 Now verify everything, before building anything on top:
 
-> Run the preflight checks.
+**Prompt:**
+
+```text
+Run the preflight checks.
+```
 
 **Checkpoint:** `aws_ok`, `cortex_ok`, `raw_iceberg_ok` and `analytics_iceberg_ok` all come back TRUE, every
 Iceberg object reports `is_v3 = TRUE`, and the stream reports `mode = APPEND_ONLY`.
@@ -273,7 +294,11 @@ v2 → v3 upgrade, so a wrong answer here gets more expensive with every Part.
 
 **Approach: direct execution.** Everything here is read-only.
 
-> Start the producer in the background with both sources, then verify rows are landing.
+**Prompt:**
+
+```text
+Start the producer in the background with both sources, then verify rows are landing.
+```
 
 **You start this once and leave it running for the rest of the lab.** You will never stop it, and
 you will never restart it. That is the point: a streaming pipeline is something you turn on and
@@ -309,14 +334,22 @@ targets so Snowflake can size Parquet files sensibly. Expected, not a fault.
 
 ### While that first 30 seconds passes
 
-> Show me the pipes and channels for these tables.
+**Prompt:**
+
+```text
+Show me the pipes and channels for these tables.
+```
 
 **Checkpoint:** one pipe per target table, each with a name you did not choose, and no `CREATE PIPE`
 anywhere in this lab or in `solutions/`. Snowpipe Streaming auto-created them.
 
 Now the part that is actually about change data capture:
 
-> Show me the journal's change events, the event-type mix, and the destination's lag.
+**Prompt:**
+
+```text
+Show me the journal's change events, the event-type mix, and the destination's lag.
+```
 
 | `EVENT_TYPE` | What it carries |
 |---|---|
@@ -341,7 +374,11 @@ a generation counter, and the connector prunes it. You build on the destination 
 
 ### Two deep-dives, while the pipeline settles
 
-> Show me SF_METADATA, what type it really is, and pull the offset token out of it.
+**Prompt:**
+
+```text
+Show me SF_METADATA, what type it really is, and pull the offset token out of it.
+```
 
 `SF_METADATA` is a `VARIANT` holding a JSON **string**, not a parsed object, because that is what the
 connector writes.
@@ -350,7 +387,11 @@ connector writes.
 while `PARSE_JSON(SF_METADATA::STRING):offset_token` returns an actual offset. Both are true at once,
 which is the whole lesson: a `VARIANT` column is not a promise that its contents are parsed.
 
-> Find the connector's merges in query history using its query tag.
+**Prompt:**
+
+```text
+Find the connector's merges in query history using its query tag.
+```
 
 The connector stamps every merge with a `QUERY_TAG` identifying itself, its operation and its merge
 strategy. Filtering `QUERY_HISTORY` on that tag is how you would audit a real Openflow deployment, and
@@ -364,7 +405,11 @@ it works identically here.
 **Approach: generate then confirm.** One predicate in here is the difference between a correct
 pipeline and a plausible-looking wrong one. Read for it.
 
-> Create the two layer-one Dynamic Tables, INSPECTIONS_ACTIVE and STATION_HEALTH.
+**Prompt:**
+
+```text
+Create the two layer-one Dynamic Tables, INSPECTIONS_ACTIVE and STATION_HEALTH.
+```
 
 `INSPECTIONS_ACTIVE` carries the predicate that matters: `WHERE NOT _SNOWFLAKE_DELETED`. Omit it and
 voided frames count against yield forever.
@@ -378,7 +423,11 @@ readings underneath.
 an **empty** `refresh_mode_reason` for both. A populated `refresh_mode_reason` names its own cause —
 read it rather than guessing.
 
-> Create the two Gold Dynamic Tables, YIELD_BY_LINE_5MIN and DEFECT_COUNTS_5MIN.
+**Prompt:**
+
+```text
+Create the two Gold Dynamic Tables, YIELD_BY_LINE_5MIN and DEFECT_COUNTS_5MIN.
+```
 
 `YIELD_BY_LINE_5MIN` is the join that earns the second data source: yield and booth humidity in the
 same row, for the same 5-minute interval. Yield alone tells you PAINT is scrapping frames. Yield
@@ -395,7 +444,11 @@ Single-digit row counts are correct — three lines times the number of elapsed 
 `YIELD_BY_LINE_5MIN` holds three rows per elapsed 5-minute bucket — single digits early on. It is
 much smaller than `QUALITY_INSPECTIONS` by design; that is what aggregation means.
 
-> Show me the refresh history for these Dynamic Tables.
+**Prompt:**
+
+```text
+Show me the refresh history for these Dynamic Tables.
+```
 
 **Checkpoint:** the per-refresh row counts stay small even as the base table grows. Snowflake is
 recomputing only the 5-minute groups that changed — while the source underneath is being UPDATEd and
@@ -405,7 +458,11 @@ DELETEd continuously by the connector's merges.
 
 At any point, in any Part:
 
-> Show me the lab progress query.
+**Prompt:**
+
+```text
+Show me the lab progress query.
+```
 
 **Checkpoint:** it lists every object you should have built by now with its row count, and flags
 anything missing. This is also the fastest way for the presenter to see who is stuck.
@@ -414,12 +471,20 @@ anything missing. This is also the fastest way for the presenter to see who is s
 
 **Approach: sequential prompts.** Two objects, and the second depends on the first being right.
 
-> Create the semantic view PLANT_FLOOR_SV, then run its three checkpoint queries.
+**Prompt:**
+
+```text
+Create the semantic view PLANT_FLOOR_SV, then run its three checkpoint queries.
+```
 
 **Checkpoint:** all three `SEMANTIC_VIEW()` queries return rows. In steady state each line sits around
 95–99% first-pass yield.
 
-> Create the Cascade Plant Analyst agent over PLANT_FLOOR_SV.
+**Prompt:**
+
+```text
+Create the Cascade Plant Analyst agent over PLANT_FLOOR_SV.
+```
 
 The agent's Analyst tool needs a warehouse named in `execution_environment`. Without it `CREATE AGENT`
 succeeds and then every question fails with an opaque internal error that mentions neither the
@@ -443,9 +508,13 @@ The producer is still running from Part 2, and it stays running. What changes is
 the pipeline — you write a row to a control table and the running simulator picks it up within about
 ten seconds:
 
-> Set the simulator control mode to INCIDENT.
+**Prompt:**
 
-**Fast path** — if you would rather not wait for a prompt, this is all it does:
+```text
+Set the simulator control mode to INCIDENT.
+```
+
+**Fast path:** if you would rather not wait for a prompt, this is all it does:
 
 ```sql
 INSERT INTO MFG.RAW.SIMULATOR_CONTROL (MODE, UPDATED_AT)
@@ -481,7 +550,11 @@ in Part 3. An agent on the CDC feed alone could tell you *what* happened and nev
 
 Then the recovery:
 
-> Set the simulator control mode to REINSPECT.
+**Prompt:**
+
+```text
+Set the simulator control mode to REINSPECT.
+```
 
 **Fast path:**
 
@@ -528,7 +601,11 @@ has never heard of Snowflake.
 
 ## Optional B — Break it on purpose · 3 min
 
-> Try adding a top-defect column to DEFECT_COUNTS_5MIN using MODE(DEFECT_CODE) and show me what happens.
+**Prompt:**
+
+```text
+Add a top-defect column to DEFECT_COUNTS_5MIN using MODE(DEFECT_CODE).
+```
 
 **Checkpoint:** it fails at `CREATE` time, not at refresh time:
 *"Change tracking is not supported on queries containing the function 'MODE'"*. That is why defects are
@@ -616,7 +693,11 @@ take away from this lab — it is how you stop re-explaining your conventions to
 **Do not skip this.** The Dynamic Tables refresh every minute for as long as they exist, and will
 quietly consume trial credits for days.
 
-> Run the cleanup script.
+**Prompt:**
+
+```text
+Run the cleanup script.
+```
 
 **Checkpoint:** `SHOW DYNAMIC TABLES IN SCHEMA MFG.ANALYTICS` reports `scheduling_state = SUSPENDED` for all
 four, or returns nothing at all if you removed them.
