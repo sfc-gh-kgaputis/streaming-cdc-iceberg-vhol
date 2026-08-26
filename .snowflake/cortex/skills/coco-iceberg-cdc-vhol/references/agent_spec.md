@@ -53,6 +53,13 @@ Source of truth: `solutions/06_agent.sql`
 -- using the chat panel on the detail page. You do NOT need to Publish -- the
 -- agent already exists from this SQL. Publish is only for sharing a UI-edited
 -- version.
+--
+-- DO NOT DROP execution_environment FROM tool_resources. The Analyst tool needs a
+-- warehouse to run its generated SQL in, and the spec is accepted without one --
+-- CREATE AGENT succeeds, then every question fails with an opaque
+-- "internal error (request_id: ...)" and error code 391920 that names neither the
+-- warehouse nor the tool. Measured 26 Aug: adding it turned that error into a
+-- correct answer with no other change.
 -- =====================================================================
 
 USE ROLE ACCOUNTADMIN;
@@ -73,7 +80,10 @@ FROM SPECIFICATION $$
         "description": "Yield, scrap, defect counts and station telemetry for the Cascade Cycleworks plant floor at a 5-minute grain." } }
   ],
   "tool_resources": {
-    "plant_floor": { "semantic_view": "MFG.CDC.PLANT_FLOOR_SV" }
+    "plant_floor": {
+      "semantic_view": "MFG.CDC.PLANT_FLOOR_SV",
+      "execution_environment": { "type": "warehouse", "warehouse": "HOL_WH" }
+    }
   }
 }
 $$;

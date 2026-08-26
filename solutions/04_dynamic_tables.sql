@@ -1,5 +1,5 @@
 -- =====================================================================
--- 03_dynamic_tables.sql   Answer key for Parts 3 and 4
+-- 04_dynamic_tables.sql   Answer key for Parts 5 and 6
 -- =====================================================================
 -- The pipeline. Four Dynamic ICEBERG Tables, every one of them refreshing
 -- INCREMENTALLY -- Snowflake recomputes only the groups that changed, not

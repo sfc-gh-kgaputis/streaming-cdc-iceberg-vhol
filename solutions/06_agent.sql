@@ -1,5 +1,5 @@
 -- =====================================================================
--- 05_agent.sql   Answer key for Part 6
+-- 06_agent.sql   Answer key for Part 8
 -- =====================================================================
 -- The Cascade Plant Analyst. A Cortex Agent grounded on the semantic view.
 --
@@ -21,6 +21,12 @@
 --
 --  * ALTER ACCOUNT SET CORTEX_ENABLED_CROSS_REGION = 'ANY_REGION' must have
 --    run (00_bootstrap.sql, BLOCK 1). Without it the agent degrades or fails.
+--
+--  * Keep execution_environment in tool_resources. The Analyst tool needs a
+--    warehouse to run its generated SQL in, and the spec is accepted without
+--    one -- CREATE AGENT succeeds, then every question comes back as
+--    "internal error (request_id: ...)", code 391920, which mentions neither
+--    the warehouse nor the tool. Adding it is the whole fix.
 --
 -- WHERE TO CHAT WITH IT: Snowsight -> AI & ML -> Agents -> Cascade Plant Analyst,
 -- using the chat panel on the detail page. You do NOT need to Publish -- the
@@ -46,7 +52,10 @@ FROM SPECIFICATION $$
         "description": "Yield, scrap, defect counts and station telemetry for the Cascade Cycleworks plant floor at a 5-minute grain." } }
   ],
   "tool_resources": {
-    "plant_floor": { "semantic_view": "MFG.CDC.PLANT_FLOOR_SV" }
+    "plant_floor": {
+      "semantic_view": "MFG.CDC.PLANT_FLOOR_SV",
+      "execution_environment": { "type": "warehouse", "warehouse": "HOL_WH" }
+    }
   }
 }
 $$;

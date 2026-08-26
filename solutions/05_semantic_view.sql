@@ -1,5 +1,5 @@
 -- =====================================================================
--- 04_semantic_view.sql   Answer key for Part 5
+-- 05_semantic_view.sql   Answer key for Part 7
 -- =====================================================================
 -- The semantic view is what turns the Gold tables into something an agent can
 -- reason about: business names, synonyms, and the metric definitions, so the
