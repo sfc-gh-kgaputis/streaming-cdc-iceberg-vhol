@@ -7,8 +7,12 @@ capture from an operational database lands in **Apache Iceberg** tables, **Dynam
 continuously, and an **AI agent** explains what is happening on the plant floor. You build it by
 prompting **Cortex Code**, not by pasting SQL.
 
-Everything you paste is a *prompt*. The SQL is in `solutions/` if you want it, but the point of the
-lab is that you should not need it.
+Everything you paste is a *prompt*. There is also a **fast path**: every step has its finished SQL in
+`solutions/`, and running it is a legitimate way to do this lab, not a confession.
+
+Use whichever fits where you are. If you are behind, run the file and catch up — you will still see
+every checkpoint. If you are ahead, prompt for it and read what Cortex Code produces. Nobody should
+be stuck watching a room move on without them.
 
 ## The scenario
 
@@ -28,6 +32,23 @@ is wasted on that loop; end-of-shift batch is far too slow.
 defects spike — and ask the agent *why* yield dropped. To answer, it has to read across both data
 sources and notice that the cause preceded the effect. Then you will watch inspectors overturn failed
 frames and see yield **go back up**, including for time buckets that already reported.
+
+## What you will understand by the end
+
+Not a feature tour — these are the things that change how you build:
+
+- Why `ICEBERG_VERSION_DEFAULT` resolves from your **session's** current schema while
+  `EXTERNAL_VOLUME` and `CATALOG` resolve from the target schema, and why that forces a `USE SCHEMA`
+  before every Iceberg `CREATE`.
+- Why a real CDC connector writes a **journal** and applies it on a gate, rather than writing your
+  destination table directly — and where the latency in that design actually lives.
+- What a soft delete costs you downstream, and why one missing predicate silently corrupts a yield
+  metric for ever.
+- Why an aggregate that can go **down** as well as up is the hard case, and how Dynamic Tables handle
+  a correction that rewrites history.
+- Why joining a second source is what lets an agent answer *why* instead of only *what*.
+- How a bundled Cortex Code skill turns a one-line prompt into exactly the right object — the most
+  transferable thing here.
 
 ## The architecture
 
@@ -51,12 +72,27 @@ Everything here is **pre-work**. Nothing installs during the session.
 ## Repo layout
 
 ```
-producer/       the data producer (CDC simulator + Snowpipe Streaming) and its deps
-solutions/      answer key, one file per Part -- read these any time
-external/       read the Iceberg tables from your laptop, no Snowflake compute
-dashboard/      the live plant-floor dashboard the presenter shares on screen
-docs/           architecture diagram, and the agent questions in one place
-.snowflake/     a Cortex Code skill that loads automatically (see the last section)
+producer/
+  producer.py            the CDC simulator + Snowpipe Streaming producer. Start it once, in Part 2.
+  requirements.txt       two pinned packages
+  profile.example.json   the shape of the profile.json you build in Setup D
+solutions/               the fast path -- finished SQL for every Part, safe to run any time
+  00_bootstrap.sql       account settings + the HOL_USER login and its token (Setup B)
+  01_environment.sql     database, both schemas, the Iceberg defaults, warehouse, landing tables
+  02_preflight.sql       four checks that must all be TRUE before you build anything on top
+  03_cdc_journal.sql     the journal table and its append-only stream
+  04_dynamic_tables.sql  all four Dynamic Iceberg Tables
+  05_semantic_view.sql   PLANT_FLOOR_SV, plus its three checkpoint queries
+  06_agent.sql           the Cascade Plant Analyst agent
+  progress.sql           "where am I" -- every object, built or not, with row counts
+  09_cleanup.sql         stop the spend, then optionally remove everything
+external/
+  read_iceberg.py        read the Gold table from your laptop via PyIceberg. Optional act A.
+docs/
+  architecture.svg       the diagram at the top of this file
+  agent_questions.md     the three agent questions, verbatim
+dashboard/               the live dashboard the presenter shares on screen. Not a lab step.
+.snowflake/              a Cortex Code skill that loads automatically (see the last section)
 ```
 
 ---
@@ -263,6 +299,10 @@ Two sources doing two different jobs:
 
 Only the *connector* is simulated. Everything downstream is exactly what you would build for real.
 
+**In steady state:** telemetry climbs fastest by far — roughly 900 rows per 15 seconds against a
+couple of scans per second — so expect telemetry in the tens of thousands while the journal is in the
+low thousands. That ratio is correct, not a fault.
+
 **Checkpoint:** journal events, destination rows and telemetry rows all climb when you re-run the
 query. Telemetry lag is **~30 seconds** — that is `MAX_CLIENT_LAG`, which defaults to 30 s for Iceberg
 targets so Snowflake can size Parquet files sensibly. Expected, not a fault.
@@ -287,6 +327,10 @@ Now the part that is actually about change data capture:
 That last row is why the MERGE's insert branch needs
 `IFF(EVENT_TYPE='IncrementalDeleteRows', PRIMARY_KEY__INSPECTION_ID, PAYLOAD__INSPECTION_ID)`.
 
+**In steady state:** the gap is roughly one minute of change events — around a hundred rows at the
+default rate. It grows until the gate fires, drops, and grows again. A gap that never shrinks means
+the merge is not running; a gap of zero means you are looking between a merge and its next batch.
+
 **Checkpoint:** the journal count **exceeds** the destination count. That gap is the merge gate, not a
 backlog. Each merge starts at second **:00** of a minute and finishes in a second or two. That
 contrast is the honest lesson about where the latency lives: it is a schedule you chose, not a
@@ -295,7 +339,7 @@ throughput limit.
 You will never build a Dynamic Table on this journal. It is connector-internal, its schema shifts with
 a generation counter, and the connector prunes it. You build on the destination table.
 
-### Two details worth your time, if the room is still catching up
+### Two deep-dives, while the pipeline settles
 
 > Show me SF_METADATA, what type it really is, and pull the offset token out of it.
 
@@ -325,6 +369,11 @@ pipeline and a plausible-looking wrong one. Read for it.
 `INSPECTIONS_ACTIVE` carries the predicate that matters: `WHERE NOT _SNOWFLAKE_DELETED`. Omit it and
 voided frames count against yield forever.
 
+**In steady state:** `INSPECTIONS_ACTIVE` tracks the destination table closely — a little smaller,
+because soft-deleted rows are filtered out. `STATION_HEALTH` is tiny by comparison: it is one row per
+station, metric and 5-minute bucket, so a few dozen rows is right even with tens of thousands of
+readings underneath.
+
 **Checkpoint:** `SHOW DYNAMIC TABLES` reports `refresh_mode = INCREMENTAL`, `is_iceberg = true`, and
 an **empty** `refresh_mode_reason` for both. A populated `refresh_mode_reason` names its own cause —
 read it rather than guessing.
@@ -337,6 +386,10 @@ beside humidity tells you *why*.
 
 `AVG_BOOTH_HUMIDITY` is empty for WELD and ASSEMBLY. That is correct — booth humidity is a paint-booth
 metric.
+
+**In steady state:** each line sits around **96–100%** first-pass yield, with a handful of scrap units
+per bucket. `AVG_BOOTH_HUMIDITY` reads about **44** for PAINT and is empty for WELD and ASSEMBLY.
+Single-digit row counts are correct — three lines times the number of elapsed 5-minute buckets.
 
 **Checkpoint:** all four Dynamic Tables now report `refresh_mode = INCREMENTAL`, and
 `YIELD_BY_LINE_5MIN` holds three rows per elapsed 5-minute bucket — single digits early on. It is
@@ -390,7 +443,14 @@ The producer is still running from Part 2, and it stays running. What changes is
 the pipeline — you write a row to a control table and the running simulator picks it up within about
 ten seconds:
 
-> Trigger the paint booth incident.
+> Set the simulator control mode to INCIDENT.
+
+**Fast path** — if you would rather not wait for a prompt, this is all it does:
+
+```sql
+INSERT INTO MFG.RAW.SIMULATOR_CONTROL (MODE, UPDATED_AT)
+  VALUES ('INCIDENT', CURRENT_TIMESTAMP()::TIMESTAMP_NTZ);
+```
 
 **Checkpoint:** the producer's log shows `booth_humidity` climbing away from 44 within seconds —
 `47.7`, `52.2`, `56.7` — and about 90 seconds later `[cdc] PAINT defect rate -> 26%`. You are
@@ -407,7 +467,7 @@ Now watch the cascade arrive layer by layer, and time it:
 |---|---|---|
 | Booth humidity climbs ~44 → ~70 | `STATION_HEALTH` | ~30–60 s |
 | PAINT defects spike, `PAINT_RUN` dominates | `DEFECT_COUNTS_5MIN` | ~90 s later |
-| PAINT yield falls to the mid-70s | `YIELD_BY_LINE_5MIN` | ~1–2 min after that |
+| PAINT yield falls into the **80s** | `YIELD_BY_LINE_5MIN` | ~1–2 min after that |
 
 WELD and ASSEMBLY stay in the high 90s throughout — they are your control.
 
@@ -421,7 +481,14 @@ in Part 3. An agent on the CDC feed alone could tell you *what* happened and nev
 
 Then the recovery:
 
-> Send the inspectors back in.
+> Set the simulator control mode to REINSPECT.
+
+**Fast path:**
+
+```sql
+INSERT INTO MFG.RAW.SIMULATOR_CONTROL (MODE, UPDATED_AT)
+  VALUES ('REINSPECT', CURRENT_TIMESTAMP()::TIMESTAMP_NTZ);
+```
 
 Inspectors re-check failed frames and overturn them to PASS. This is an `UPDATE` arriving over CDC,
 flowing through the journal and the MERGE, and it **rewrites history** — buckets that already reported
@@ -470,33 +537,6 @@ found the only way anyone finds these.
 
 ---
 
-# Running the clock (presenter)
-
-The arithmetic, stated plainly, because a lockstep lab has nowhere to hide:
-
-| Block | Min |
-|---|---|
-| Framing slides | ~20 |
-| Orientation — story, architecture, what is simulated | 4 |
-| Parts 1–5 | 66 |
-| **Total** | **90** |
-
-That is the whole slot with no slack, so setup **must** be pre-work and the optional acts **must** stay
-optional.
-
-If you are running long, cut in this order:
-
-1. Part 2's "two details worth your time" inset — `SF_METADATA`, query tags.
-2. Part 3's refresh-history beat. State the result instead of querying it.
-3. Part 2's pipes-and-channels prompt.
-
-Protect Part 5. It is the climax and the only place slack does anything useful.
-
-The **live dashboard** in `dashboard/` is presenter-only — share it on screen during Part 5 so the room
-watches the incident on one chart while each attendee confirms the same numbers on their own account.
-Attendees can deploy it themselves afterwards; it is not a lab step.
-
----
 
 # Troubleshooting
 
@@ -532,19 +572,23 @@ Attendees can deploy it themselves afterwards; it is not a lab step.
 You never need to edit it. Run it with the venv interpreter so it finds the SDK —
 `.venv/bin/python` on macOS/Linux, `.venv\Scripts\python.exe` on Windows.
 
+You start it **once**, in Part 2, with both sources:
+
 ```bash
-# steady state, both sources
 .venv/bin/python producer/producer.py --profile producer/profile.json --cdc --telemetry
+```
 
-# the incident: humidity drifts, then PAINT defects spike ~90s later
-.venv/bin/python producer/producer.py --profile producer/profile.json --cdc --telemetry --incident
+That is the only command the lab asks you to run. The incident and the recovery are triggered by
+writing to `MFG.RAW.SIMULATOR_CONTROL` while it keeps streaming — see Part 5.
 
-# the recovery: inspectors overturn failed frames, yield goes back up
-.venv/bin/python producer/producer.py --profile producer/profile.json --cdc --telemetry --reinspect
-
+```bash
 # see what it generates, no Snowflake account needed
 .venv/bin/python producer/producer.py --dry-run --cdc --seed 42
 ```
+
+`--incident` and `--reinspect` also exist as startup flags, and `--no-control` ignores the control
+table entirely. Those are for someone rehearsing the lab from a shell; you do not need them, and
+using them means stopping the producer, which is the one thing this design avoids.
 
 `--rate` sets scans/sec (default 2), `--telemetry-rate` sets telemetry rows/sec (default 60).
 `--seed` makes a run reproducible. `--help` lists the rest.
