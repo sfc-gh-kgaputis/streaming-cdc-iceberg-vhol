@@ -62,7 +62,7 @@ or in `solutions/`.
   `streaming-cdc-iceberg-lab` skill is active (you are running it). Also confirm the
   satellite `iceberg-external-read` is present, since Optional A needs it.
 
-## The load-bearing Iceberg defaults — and the trap in them
+## The Iceberg defaults, and the trap in them
 
 Set these before creating any table, on **both** schemas, plus the database:
 
@@ -113,7 +113,7 @@ before building anything on top of them.
 ### MFG.RAW.QUALITY_INSPECTIONS — standard table, the CDC destination
 
 Deliberately a **standard** table, not Iceberg: it takes UPDATEs and DELETEs
-continuously, which is the entire point of a change feed.
+continuously, which is what a change feed does to its destination.
 
 Columns: `INSPECTION_ID STRING` (replication key), `UNIT_ID STRING`, `LINE STRING`
 (WELD | PAINT | ASSEMBLY), `SKU STRING`, `STATUS STRING` (PASS | FAIL),
@@ -137,8 +137,8 @@ Columns: `STATION_ID STRING`, `LINE STRING`, `METRIC STRING`, `VALUE DOUBLE`,
 Metrics: `weld_current`, `booth_humidity`, `booth_temp`, `torque_nm`.
 
 Create it with **no** `CATALOG`, `EXTERNAL_VOLUME`, or `ICEBERG_VERSION` clause —
-all three come from the schema defaults, and proving that is the point of the
-preflight check. Snowpipe Streaming auto-creates a default pipe named
+all three come from the schema defaults, and the preflight check confirms they did.
+Snowpipe Streaming auto-creates a default pipe named
 `STATION_TELEMETRY-STREAMING`; there is never a `CREATE PIPE` in this lab.
 
 ### The Dynamic Iceberg Table DAG — all four INCREMENTAL, TARGET_LAG '1 minute'
@@ -253,16 +253,16 @@ is the single source of truth. There is no second copy anywhere in this skill, s
 is nothing that can drift out of sync. Read the file, then:
 
 - Emit **only its `CREATE` statements**, plus the `USE ROLE` / `USE WAREHOUSE` /
-  `USE SCHEMA` lines above them. The `USE SCHEMA` is load-bearing, not decoration —
-  see the Iceberg-defaults section above.
+  `USE SCHEMA` lines above them. The `USE SCHEMA` is required — see the
+  Iceberg-defaults section above.
 - **Never emit the checkpoint `SELECT`s** as part of a build step. Run them afterwards,
   as that step's Checkpoint, and report the result.
 - **Never emit a commented-out block.** Two exist deliberately: the reference MERGE in
   `03_journal_inspection.sql` (the producer issues that itself) and the `MODE()`
   negative example in `04_dynamic_tables.sql` (that is Optional B, and only if asked).
-- **Generate the DDL — do not tell the attendee to run the file instead.** Building it
-  by prompting is the point of the lab. `solutions/` is theirs to fall back on if they
-  choose; it is not your shortcut.
+- **Generate the DDL — do not tell the attendee to run the file instead.** The lab is
+  built by prompting. `solutions/` is theirs to fall back on if they choose; it is not
+  your shortcut.
 
 ## Measured constraints — do not rediscover these
 
@@ -355,13 +355,13 @@ step numbers here, when you talk to them.
    `SF_METADATA` `PARSE_JSON` quirk, and above all the **merge gate**: the journal always
    leads the destination, and `QUERY_HISTORY` filtered on the connector's `QUERY_TAG`
    shows one MERGE per minute at second :00, each finishing in a second or two.
-   Checkpoint G-gate. Do not skip this step — it is the best lesson in the architecture.
+   Checkpoint G-gate. Do not skip this step.
 
 5. **Layer 1 — Part 3** — `INSPECTIONS_ACTIVE` and `STATION_HEALTH`. Checkpoint D.
 
 6. **Gold — Part 3** — `YIELD_BY_LINE_5MIN` (the join) and `DEFECT_COUNTS_5MIN`.
    Checkpoint Y. Then show refresh history, and if asked, demonstrate the `MODE()`
-   failure as a real teaching moment.
+   failure.
 
 7. **Semantic view + agent — Part 4** — emit both verbatim from `solutions/`, following
    their sections above. After creating the agent, tell the attendee to chat with it in
@@ -386,9 +386,8 @@ step numbers here, when you talk to them.
 
    Tell the attendee to watch the producer's own log: `booth_humidity` climbs away
    from 44 within seconds, and `[cdc] PAINT defect rate -> 26%` follows ~90 s later.
-   That is the cascade, visible before any query. Booth humidity ramps
-   first, then PAINT defects spike ~90 s later. Have the attendee stopwatch each layer.
-   Then ask the agent *why*. Checkpoint X.
+   That is the cascade, visible before any query. Have the attendee stopwatch each
+   layer, then ask the agent *why*. Checkpoint X.
 
 9. **The recovery — Part 5** — again **no restart**. Write `REINSPECT`:
 
@@ -399,11 +398,10 @@ step numbers here, when you talk to them.
 
    This fixes the booth (humidity returns to ~44) and starts a **bounded** burst of
    re-inspections — about 40% of the failed backlog, over ~3 minutes, then back to
-   normal cadence on its own. Yield for buckets that already reported goes UP but
-   does **not** reach 100%: some frames really are scrap. If yield pins at exactly
-   100% with an empty `DEFECT_COUNTS_5MIN`, something is wrong. Inspectors overturn failed frames to
-   PASS and **yield goes back up**, including for buckets that already reported.
-   Confirm the DTs are still INCREMENTAL. Checkpoint R.
+   normal cadence on its own. Inspectors overturn failed frames to PASS, so yield goes
+   UP for buckets that already reported, but it does **not** reach 100%: some frames
+   really are scrap. If yield pins at exactly 100% with an empty `DEFECT_COUNTS_5MIN`,
+   something is wrong. Confirm the DTs are still INCREMENTAL. Checkpoint R.
 
 ## Checkpoints
 
@@ -420,7 +418,7 @@ step numbers here, when you talk to them.
   The journal must report Iceberg format version 3 and the stream `mode = APPEND_ONLY`.
   `QUALITY_INSPECTIONS` must exist and must **not** be Iceberg. Do not add a
   "confirm zero tasks exist" check — proving a negative teaches nothing, and the no-task
-  fact is earned properly at G-gate by finding the producer's MERGE via its `QUERY_TAG`.
+  fact is established at G-gate by finding the producer's MERGE via its `QUERY_TAG`.
 
 - **I (ingest):** both sources landing.
   ```sql
@@ -508,8 +506,8 @@ request. They ship pre-written for stated reasons:
   PyIceberg and the Horizon Catalog. Optional act A, and it has **its own skill**:
   `iceberg-external-read`, which carries the two auth traps and the failure modes. That
   skill loads on its own description, and the README also shows the attendee invoking it
-  explicitly as `$iceberg-external-read` — deliberately, as the lab's one demonstration
-  of calling a skill by name. Do not duplicate its content here.
+  explicitly as `$iceberg-external-read` — one of the lab's two demonstrations of calling
+  a skill by name, the other being Setup C. Do not duplicate its content here.
 - **`dashboard/streamlit_app.py`** — the live plant-floor dashboard. **Presenter-only.**
   It is shared on screen during Part 5; it is not a lab step. If an attendee asks, they
   can deploy it after the session with `snow streamlit deploy`.
