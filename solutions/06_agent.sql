@@ -77,3 +77,8 @@ SHOW AGENTS LIKE 'CASCADE_PLANT_ANALYST' IN SCHEMA MFG.ANALYTICS;
 -- across BOTH sources -- the CDC scan feed for yield and the streamed sensor
 -- telemetry for booth humidity -- and notice that humidity rose before the
 -- defects did. An agent on the CDC feed alone can only tell you WHAT happened.
+
+-- A trailing real statement, deliberately: Snowsight parses text after the last
+-- statement as a statement, so a file ENDING in comments throws
+-- "SQL compilation error: Empty SQL statement" when you run the whole thing.
+SELECT 'agent created -- now chat with it in Snowsight' AS status;

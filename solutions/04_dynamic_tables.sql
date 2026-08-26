@@ -186,3 +186,8 @@ LIMIT 10;
 --
 -- Expected:
 --   Change tracking is not supported on queries containing the function 'MODE'
+
+-- A trailing real statement, deliberately: Snowsight parses text after the last
+-- statement as a statement, so a file ENDING in comments throws
+-- "SQL compilation error: Empty SQL statement" when you run the whole thing.
+SELECT 'dynamic tables created -- all four must read INCREMENTAL' AS status;

@@ -69,13 +69,4 @@ ALTER USER HOL_USER
 -- Paste this value into Cortex Code's "Account identifier" field.
 SELECT CURRENT_ORGANIZATION_NAME() || '-' || CURRENT_ACCOUNT_NAME() AS account_identifier;
 
--- =========== OPTIONAL: teardown of the identity (run later) ===========
--- Run these from Snowsight as your signup admin, NOT from Cortex Code --
--- Cortex Code is connected AS HOL_USER and cannot drop the user it is
--- authenticated with. Lab objects are dropped in 09_cleanup.sql.
---
--- ALTER USER HOL_USER REMOVE PROGRAMMATIC ACCESS TOKEN HOL_PAT;
--- DROP USER IF EXISTS HOL_USER;
--- DROP NETWORK POLICY IF EXISTS HOL_NP;
--- (List tokens: SHOW USER PROGRAMMATIC ACCESS TOKENS FOR USER HOL_USER;)
-SELECT 'bootstrap complete' AS status;
+SELECT 'bootstrap complete -- copy the token into secret.pat, then Setup C' AS status;

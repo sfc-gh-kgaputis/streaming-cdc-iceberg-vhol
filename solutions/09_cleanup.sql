@@ -54,8 +54,19 @@ DROP TABLE IF EXISTS MFG.RAW.QUALITY_INSPECTIONS;
 DROP DATABASE  IF EXISTS MFG;
 DROP WAREHOUSE IF EXISTS HOL_WH;
 
--- The lab identity is dropped from 00_bootstrap.sql instead -- Cortex Code is
--- connected AS HOL_USER and cannot drop the user it is authenticated with.
--- See the teardown block at the bottom of that file, and run it from Snowsight.
+-- ============= BLOCK 3: the lab identity (Snowsight only) =============
+-- Run these from Snowsight as your SIGNUP admin, not from Cortex Code -- Cortex
+-- Code is connected AS HOL_USER and cannot drop the user it is authenticated as.
+-- Uncomment to run.
+--
+-- ALTER USER HOL_USER REMOVE PROGRAMMATIC ACCESS TOKEN HOL_PAT;
+-- DROP USER IF EXISTS HOL_USER;
+-- DROP NETWORK POLICY IF EXISTS HOL_NP;
+-- (List tokens: SHOW USER PROGRAMMATIC ACCESS TOKENS FOR USER HOL_USER;)
 
 -- Finally, delete your local secret.pat and producer/profile.json.
+
+-- A trailing real statement, deliberately: Snowsight parses text after the last
+-- statement as a statement, so a file ENDING in comments throws
+-- "SQL compilation error: Empty SQL statement" when you run the whole thing.
+SELECT 'cleanup complete' AS status;

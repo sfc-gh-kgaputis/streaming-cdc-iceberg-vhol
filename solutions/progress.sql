@@ -86,3 +86,8 @@ ORDER BY e.seq;
 -- Any table showing 'built' with 0 rows and no growth means the producer is
 -- not running, or is running without the flag for that feed.
 -- =====================================================================
+
+-- A trailing real statement, deliberately: Snowsight parses text after the last
+-- statement as a statement, so a file ENDING in comments throws
+-- "SQL compilation error: Empty SQL statement" when you run the whole thing.
+SELECT 'progress query complete' AS status;

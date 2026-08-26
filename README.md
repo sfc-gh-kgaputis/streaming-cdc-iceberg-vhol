@@ -156,6 +156,17 @@ ALTER USER HOL_USER
 **Copy the `token_secret` value now — it is shown once.** Create a file called `secret.pat` in the
 root of this repo and paste the token into it. It is gitignored.
 
+**Missed it?** The token really is unrecoverable, but you do not need to start over — rotate it to get
+a fresh one, in Snowsight as your signup admin:
+
+```sql
+ALTER USER HOL_USER ROTATE PROGRAMMATIC ACCESS TOKEN HOL_PAT;
+```
+
+That returns a new `token_secret`. Copy *that* into `secret.pat`. Do not try to create the token by
+prompting Cortex Code — it is not connected yet, which is the whole reason this one block is SQL you
+paste rather than a prompt.
+
 Then run this and copy the result:
 
 ```sql
@@ -632,6 +643,9 @@ found the only way anyone finds these.
 | Telemetry rows take ~30 s to appear | `MAX_CLIENT_LAG` defaults to 30 s for Iceberg | Expected behaviour, not a fault. |
 | Producer: `ERR_CHANNEL_HAS_UNCOMMITTED_DATA` (HTTP 409) | You stopped the producer and started it again within ~30 s, reopening a channel that was still committing | The lab never asks you to restart it — Part 5 changes modes through the control table instead. If you did stop it, wait ~30 s. Never run two producers at once. |
 | Producer: `externally-managed-environment` | macOS Homebrew Python, PEP 668 | Use the venv interpreter, not system Python. Ask Cortex Code to redo the venv step. |
+| Snowsight: `SQL compilation error: Empty SQL statement` at the end of a `solutions/` file | Snowsight parses whatever follows the last statement as a statement, so a file ending in comments errors | Harmless — everything above it ran. Every file now ends with a `SELECT '… complete'` so you get a confirmation row instead. If you see it, check the statements above succeeded. |
+| You did not copy `token_secret` in time | It is shown exactly once | `ALTER USER HOL_USER ROTATE PROGRAMMATIC ACCESS TOKEN HOL_PAT;` in Snowsight returns a fresh one. Do not prompt Cortex Code for it — it is not connected yet. |
+| Part 5: `SIMULATOR_CONTROL does not exist`, or the producer logs `[control] read failed` | Part 1 created the landing tables but not the control table | Run [`solutions/01_environment.sql`](solutions/01_environment.sql), which creates all three. Then re-run the Part 5 prompt. |
 | Producer: authentication fails | Token expired, or `profile.json` has the wrong account | Tokens last 7 days. Re-mint in Snowsight and rebuild `profile.json`. |
 | Agent: `internal error (request_id: …)`, code 391920 | The Analyst tool has no `execution_environment`, so its generated SQL has no warehouse to run in | Add `"execution_environment": { "type": "warehouse", "warehouse": "HOL_WH" }` to the `tool_resources` entry and re-run `CREATE OR REPLACE AGENT`. |
 | Agent answers with stale numbers | The pipeline lags 1–2 min by design | Ask again in a minute. "Right now" means the most recent complete buckets. |

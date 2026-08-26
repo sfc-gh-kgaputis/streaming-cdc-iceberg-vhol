@@ -90,3 +90,8 @@ SHOW ICEBERG TABLES IN DATABASE MFG
 -- If cortex_ok is FALSE: re-run BLOCK 1 of 00_bootstrap.sql as ACCOUNTADMIN
 -- in Snowsight.
 -- =====================================================================
+
+-- A trailing real statement, deliberately: Snowsight parses text after the last
+-- statement as a statement, so a file ENDING in comments throws
+-- "SQL compilation error: Empty SQL statement" when you run the whole thing.
+SELECT 'preflight complete -- all four checks above must read TRUE' AS status;

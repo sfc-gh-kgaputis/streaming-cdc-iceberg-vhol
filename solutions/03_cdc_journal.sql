@@ -277,3 +277,8 @@ LIMIT 5;
 --    placeholder handling for wide source rows.
 -- 6. Real WAL LSNs. The producer uses a monotonic logical clock instead, which is
 --    all the ordering guarantee the MERGE actually requires.
+
+-- A trailing real statement, deliberately: Snowsight parses text after the last
+-- statement as a statement, so a file ENDING in comments throws
+-- "SQL compilation error: Empty SQL statement" when you run the whole thing.
+SELECT 'journal and stream created -- no task, by design' AS status;

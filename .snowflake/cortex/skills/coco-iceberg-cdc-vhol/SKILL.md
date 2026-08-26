@@ -238,8 +238,13 @@ step numbers here, when you talk to them.
 
 1. **Environment + tables — Part 1** — create `MFG`, schemas `RAW` and `ANALYTICS`, the database-level
    version default, **the three Iceberg defaults on both schemas**, `HOL_WH`, then
-   `QUALITY_INSPECTIONS` and `STATION_TELEMETRY`. `USE SCHEMA` before each Iceberg
-   create. Then run the preflight (Checkpoint P).
+   `QUALITY_INSPECTIONS`, `STATION_TELEMETRY` **and `SIMULATOR_CONTROL`**. `USE SCHEMA`
+   before each Iceberg create. Then run the preflight (Checkpoint P).
+
+   `SIMULATOR_CONTROL` is easy to forget because the attendee's prompt only mentions
+   the environment and the landing tables. Create it anyway — Part 5 writes to it, and
+   without it the producer logs `[control] read failed` and Part 5's prompt fails on a
+   missing table.
 
 2. **CDC journal — Part 1** — create the journal table and its `APPEND_ONLY` stream. Two objects,
    verbatim from `references/object_model.md`. **No task** — the producer issues the
