@@ -1,5 +1,5 @@
 -- =====================================================================
--- 03_cdc_journal.sql   Answer key for Part 2
+-- 03_cdc_journal.sql   Answer key for Part 1 (build) and Part 2 (inspect)
 -- =====================================================================
 -- This is the part of the lab that is actually about change data capture.
 --

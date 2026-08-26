@@ -1,5 +1,5 @@
 -- =====================================================================
--- 06_agent.sql   Answer key for Part 8
+-- 06_agent.sql   Answer key for Part 4
 -- =====================================================================
 -- The Cascade Plant Analyst. A Cortex Agent grounded on the semantic view.
 --

@@ -310,6 +310,27 @@ Follow the attendee's lead. Each step maps to one prompt.
 - **R (recovery):** PAINT yield rises again and `COUNT_IF(_SNOWFLAKE_UPDATED_AT >
   _SNOWFLAKE_INSERTED_AT)` on `PRODUCTION_SCANS` climbs. The DTs stay INCREMENTAL.
 
+### "Where am I?" — the progress query
+
+If the attendee asks where they are, what they have built, what is missing, whether
+anything is flowing, or anything of that shape — **run `solutions/progress.sql`
+verbatim**. Do not compose your own version; it is one statement and it is verified.
+
+It lists all eight buildable objects with a built / NOT YET status and an approximate
+row count. Reading it for them:
+
+- Everything through their current Part should say `built`.
+- `PRODUCTION_SCANS` having **fewer** rows than the journal is the merge gate, not a
+  fault.
+- `DT_YIELD_BY_LINE_5MIN` holding single-digit rows is **correct** — it is three lines
+  times the number of elapsed 5-minute buckets. Do not compare it to
+  `PRODUCTION_SCANS` and report a problem.
+- `built` with 0 rows and no growth means the producer is not running, or is running
+  without the flag for that feed.
+
+The agent is not in that query — agents have no `INFORMATION_SCHEMA` view. Check it
+with `SHOW AGENTS LIKE 'CASCADE_PLANT_ANALYST' IN SCHEMA MFG.CDC;`.
+
 ## Stopping Points
 
 - Do not create any Iceberg table without `USE SCHEMA` on the line before it.
@@ -329,6 +350,23 @@ Follow the attendee's lead. Each step maps to one prompt.
 - `references/object_model.md` — verbatim DDL for the journal, the DAG, and the
   semantic view.
 - `references/agent_spec.md` — verbatim agent spec and the three questions.
+- `solutions/progress.sql` — the "where am I" query. Run it verbatim.
+
+## Things in this repo that are NOT attendee build steps
+
+Do not offer to generate these, and do not treat a question about them as a build
+request. They ship pre-written for stated reasons:
+
+- **`external/read_iceberg.py`** — reads the Gold table from outside Snowflake via
+  PyIceberg and the Horizon Catalog. Optional act A. Ships pre-written because the auth
+  path has two traps that are not in the PyIceberg docs: a PAT must be **exchanged** for
+  an access token first (a PAT as a Bearer token returns 401 with an empty body), and
+  PyIceberg's `credential` property is rejected by Horizon — pass `token=` instead. If
+  an attendee hits either, point at the comments in that file. They run it with
+  `pip install -r external/requirements.txt && python external/read_iceberg.py`.
+- **`dashboard/streamlit_app.py`** — the live plant-floor dashboard. **Presenter-only.**
+  It is shared on screen during Part 5; it is not a lab step. If an attendee asks, they
+  can deploy it after the session with `snow streamlit deploy`.
 
 ## Output
 

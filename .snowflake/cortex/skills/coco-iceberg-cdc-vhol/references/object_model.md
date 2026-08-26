@@ -142,7 +142,7 @@ commented reference so it can be read and run by hand.
 
 ```sql
 -- =====================================================================
--- 03_cdc_journal.sql   Answer key for Part 2
+-- 03_cdc_journal.sql   Answer key for Part 1 (build) and Part 2 (inspect)
 -- =====================================================================
 -- This is the part of the lab that is actually about change data capture.
 --
@@ -430,7 +430,7 @@ Source of truth: `solutions/04_dynamic_tables.sql`
 
 ```sql
 -- =====================================================================
--- 03_dynamic_tables.sql   Answer key for Parts 3 and 4
+-- 04_dynamic_tables.sql   Answer key for Part 3
 -- =====================================================================
 -- The pipeline. Four Dynamic ICEBERG Tables, every one of them refreshing
 -- INCREMENTALLY -- Snowflake recomputes only the groups that changed, not
@@ -601,7 +601,7 @@ LIMIT 10;
 
 
 -- =====================================================================
--- THE NEGATIVE EXAMPLE (Part 4) -- run it and read the error
+-- THE NEGATIVE EXAMPLE (Optional B) -- run it and read the error
 -- =====================================================================
 -- This is a real, instructive failure, not a contrived one. It is the first
 -- thing most people reach for.
@@ -633,7 +633,7 @@ Source of truth: `solutions/05_semantic_view.sql`
 
 ```sql
 -- =====================================================================
--- 04_semantic_view.sql   Answer key for Part 5
+-- 05_semantic_view.sql   Answer key for Part 4
 -- =====================================================================
 -- The semantic view is what turns the Gold tables into something an agent can
 -- reason about: business names, synonyms, and the metric definitions, so the
@@ -653,6 +653,9 @@ USE ROLE ACCOUNTADMIN;
 USE WAREHOUSE HOL_WH;
 USE SCHEMA MFG.CDC;
 
+-- THREE tables, not two. The agent needs stations even though DT_YIELD_BY_LINE
+-- _5MIN already carries booth humidity, because "is anything wrong on WELD?"
+-- is a question about a metric that never reaches the yield table.
 CREATE OR REPLACE SEMANTIC VIEW MFG.CDC.PLANT_FLOOR_SV
   TABLES (
     yield AS MFG.CDC.DT_YIELD_BY_LINE_5MIN
@@ -668,10 +671,19 @@ CREATE OR REPLACE SEMANTIC VIEW MFG.CDC.PLANT_FLOOR_SV
       WITH SYNONYMS = ('stations', 'station health', 'sensors', 'telemetry', 'machine metrics')
       COMMENT = 'Sensor telemetry averaged per station per metric per 5 minutes.'
   )
+  -- Both relationships point AT yield, making it the hub. That is deliberate:
+  -- every question in this lab is ultimately "how is the line doing", so the
+  -- agent should reach defects and telemetry by way of yield rather than
+  -- joining them to each other. A star beats a chain for text-to-SQL, because
+  -- there is only ever one join path to get wrong.
   RELATIONSHIPS (
     defects_to_yield AS defects (LINE, BUCKET) REFERENCES yield (LINE, BUCKET),
     stations_to_yield AS stations (LINE, BUCKET) REFERENCES yield (LINE, BUCKET)
   )
+  -- FACTS are raw columns; METRICS are aggregations over them. The split
+  -- matters: an agent handed only raw columns invents its own aggregations and
+  -- picks a different one each time you ask. Naming the metric once here is
+  -- what makes two runs of the same question return the same number.
   FACTS (
     yield.units AS UNITS,
     yield.scrap_units AS SCRAP_UNITS,
@@ -681,6 +693,11 @@ CREATE OR REPLACE SEMANTIC VIEW MFG.CDC.PLANT_FLOOR_SV
     stations.reading_avg AS AVG_VALUE,
     stations.reading_max AS MAX_VALUE
   )
+  -- SYNONYMS are the highest-leverage thing in this file. A plant manager says
+  -- "work centre" and "stage"; the column is called LINE. Every synonym you
+  -- add is a question that now resolves without clarification. COMMENTs do
+  -- the same job for values -- note the two places that spell out what NONE
+  -- means, because "the top defect is NONE" is the classic wrong answer.
   DIMENSIONS (
     yield.line AS LINE
       WITH SYNONYMS = ('line', 'production line', 'work centre', 'stage')
@@ -717,10 +734,12 @@ CREATE OR REPLACE SEMANTIC VIEW MFG.CDC.PLANT_FLOOR_SV
 
 
 -- =====================================================================
--- CHECKPOINTS -- the three questions the agent has to answer in Part 6
+-- CHECKPOINTS -- the three questions the agent has to answer in Parts 4 and 5
 -- =====================================================================
 -- Query a semantic view with SEMANTIC_VIEW(), naming DIMENSIONS and METRICS.
--- If these three work, the agent has what it needs.
+-- If these three work, the agent has what it needs -- and if the agent later
+-- gets one of them wrong, you know the problem is in its instructions, not in
+-- this view. That is the point of running them by hand first.
 
 -- Q1  "What is first-pass yield by line right now?"
 SELECT * FROM SEMANTIC_VIEW(MFG.CDC.PLANT_FLOOR_SV

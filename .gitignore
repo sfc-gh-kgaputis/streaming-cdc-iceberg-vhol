@@ -13,6 +13,11 @@ venv/
 __pycache__/
 *.pyc
 *.egg-info/
+.pytest_cache/
+.ruff_cache/
+
+# Build artifacts from `snow streamlit deploy` — it stages a copy of the app
+dashboard/output/
 
 # Facilitator-only materials — kept local, not published to the attendee repo
 outline.md

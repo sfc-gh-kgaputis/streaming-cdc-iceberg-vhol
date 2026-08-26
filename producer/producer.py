@@ -37,6 +37,8 @@ Examples
   python producer/producer.py --dry-run --cdc
 """
 
+from __future__ import annotations
+
 import argparse
 import copy
 import json
@@ -47,13 +49,18 @@ import threading
 import time
 import uuid
 from datetime import datetime, timedelta, timezone
+from typing import Any
 
 # ---------------------------------------------------------------------------
 # Plant model
 # ---------------------------------------------------------------------------
 LINES = ["WELD", "PAINT", "ASSEMBLY"]
 
-STATION_BY_LINE = {"WELD": "ST-WELD-01", "PAINT": "ST-PAINT-01", "ASSEMBLY": "ST-ASSY-01"}
+STATION_BY_LINE = {
+    "WELD": "ST-WELD-01",
+    "PAINT": "ST-PAINT-01",
+    "ASSEMBLY": "ST-ASSY-01",
+}
 
 SKUS = ["FRAME-RD-54", "FRAME-RD-56", "FRAME-MTB-17", "FRAME-GRV-55"]
 
@@ -110,16 +117,28 @@ EV_DELETE = "IncrementalDeleteRows"
 
 # Source columns, in order. Drives both the journal PAYLOAD__* columns and the
 # destination table.
-SOURCE_COLUMNS = ["SCAN_ID", "FRAME_ID", "LINE", "SKU", "STATUS", "DEFECT_CODE",
-                  "STATION_ID", "OPERATOR_ID", "EVENT_TS", "UPDATED_TS"]
+SOURCE_COLUMNS = [
+    "SCAN_ID",
+    "FRAME_ID",
+    "LINE",
+    "SKU",
+    "STATUS",
+    "DEFECT_CODE",
+    "STATION_ID",
+    "OPERATOR_ID",
+    "EVENT_TS",
+    "UPDATED_TS",
+]
 
 # The connector tags every merge it issues, which is how you find them in
 # QUERY_HISTORY. Values are the connector's own.
-MERGE_QUERY_TAG = json.dumps({
-    "application": "SNOWFLAKE_OPENFLOW",
-    "operation": "cdc.merge.full_values",
-    "strategy": "full_values_snowflake_managed",
-})
+MERGE_QUERY_TAG = json.dumps(
+    {
+        "application": "SNOWFLAKE_OPENFLOW",
+        "operation": "cdc.merge.full_values",
+        "strategy": "full_values_snowflake_managed",
+    }
+)
 
 # The MERGE the connector's merge processor issues. Not a Snowflake task -- the
 # connector runs this itself over its own Snowflake connection. See merge_loop().
@@ -175,18 +194,18 @@ WHEN NOT MATCHED THEN
 _stop = threading.Event()
 
 
-def log(msg):
+def log(msg: str) -> None:
     """Progress goes to stderr so it does not flood a chat transcript when the
     producer runs in the background."""
     print(msg, file=sys.stderr, flush=True)
 
 
-def utcnow():
+def utcnow() -> datetime:
     """Naive UTC. The account is UTC and Iceberg TIMESTAMP_NTZ wants no offset."""
     return datetime.now(timezone.utc).replace(tzinfo=None)
 
 
-def iso(ts):
+def iso(ts: Any) -> Any:
     return ts.isoformat(timespec="milliseconds") if isinstance(ts, datetime) else ts
 
 
@@ -204,35 +223,34 @@ class CdcSimulator:
       * ordering is the (MOST_, LEAST_SIGNIFICANT_POSITION) tuple, monotonic
     """
 
-    def __init__(self, args, sink):
+    def __init__(self, args: Any, sink: Any) -> None:
         self.args = args
         self.sink = sink
         self.rng = random.Random(args.seed)
         self.frame_seq = 0
-        self.rows = {}            # scan_id -> current row state
-        self.recent_fails = []    # scan_ids eligible for re-inspection
-        self.recent_scans = []    # scan_ids eligible for voiding
+        self.rows: dict[str, Any] = {}  # scan_id -> current row state
+        self.recent_fails: list[str] = []  # scan_ids eligible for re-inspection
+        self.recent_scans: list[str] = []  # scan_ids eligible for voiding
         self.incident_until = None
-        self.counts = {"insert": 0, "update": 0, "delete": 0}
+        self.counts: dict[str, int] = {"insert": 0, "update": 0, "delete": 0}
         # Logical WAL clock. batch = transaction, msg = position within it.
         self.batch = 0
 
     # -- incident control ---------------------------------------------------
-    def defect_rate(self, line):
+    def defect_rate(self, line: str) -> float:
         if self.incident_active() and line in INCIDENT_DEFECT_RATE:
             return INCIDENT_DEFECT_RATE[line]
         return BASE_DEFECT_RATE[line]
 
-    def incident_active(self):
+    def incident_active(self) -> bool:
         return self.incident_until is not None and utcnow() < self.incident_until
 
-    def start_incident(self, minutes):
+    def start_incident(self, minutes: float) -> None:
         self.incident_until = utcnow() + timedelta(minutes=minutes)
-        log(f"[cdc] PAINT defect rate -> {INCIDENT_DEFECT_RATE['PAINT']:.0%} "
-            f"for {minutes} min")
+        log(f"[cdc] PAINT defect rate -> {INCIDENT_DEFECT_RATE['PAINT']:.0%} for {minutes} min")
 
     # -- generation ---------------------------------------------------------
-    def new_scan(self):
+    def new_scan(self) -> dict[str, Any]:
         self.frame_seq += 1
         line = self.rng.choices(LINES, weights=[34, 33, 33])[0]
         failed = self.rng.random() < self.defect_rate(line)
@@ -240,8 +258,11 @@ class CdcSimulator:
         if failed:
             if self.incident_active() and line == "PAINT":
                 # Skew hard to one code so "which defect is driving scrap" has an answer.
-                defect = INCIDENT_DEFECT_CODE if self.rng.random() < 0.8 \
+                defect = (
+                    INCIDENT_DEFECT_CODE
+                    if self.rng.random() < 0.8
                     else self.rng.choice(DEFECTS_BY_LINE[line])
+                )
             else:
                 defect = self.rng.choice(DEFECTS_BY_LINE[line])
         else:
@@ -261,13 +282,13 @@ class CdcSimulator:
             "UPDATED_TS": now,
         }
 
-    def tick(self, n):
+    def tick(self, n: int) -> None:
         """One transaction: n inserts, plus any updates and deletes now due."""
         self.batch += 1
-        msn = self.batch * 10_000     # end-of-transaction LSN
+        msn = self.batch * 10_000  # end-of-transaction LSN
         msg = 0
 
-        def next_lsn():
+        def next_lsn() -> int:
             nonlocal msg
             msg += 1
             return msn + msg
@@ -328,7 +349,7 @@ class CdcSimulator:
 
         self.sink.tick_done()
 
-    def _poisson_ish(self, expected):
+    def _poisson_ish(self, expected: float) -> int:
         base = int(expected)
         return base + (1 if self.rng.random() < (expected - base) else 0)
 
@@ -337,40 +358,44 @@ class CdcSimulator:
 # Telemetry source
 # ---------------------------------------------------------------------------
 class TelemetrySimulator:
-    def __init__(self, args, sink):
+    def __init__(self, args: Any, sink: Any) -> None:
         self.args = args
         self.sink = sink
         self.rng = random.Random((args.seed or 0) + 7)
         self.drift_start = None
         self.ramp = 1.0
 
-    def start_drift(self, ramp_seconds):
+    def start_drift(self, ramp_seconds: float) -> None:
         self.drift_start = utcnow()
         self.ramp = max(1.0, ramp_seconds)
-        log(f"[telem] booth_humidity ramping {METRICS['booth_humidity'][1]:.0f} -> "
-            f"{INCIDENT_HUMIDITY:.0f} over {ramp_seconds:.0f}s")
+        log(
+            f"[telem] booth_humidity ramping {METRICS['booth_humidity'][1]:.0f} -> "
+            f"{INCIDENT_HUMIDITY:.0f} over {ramp_seconds:.0f}s"
+        )
 
-    def current_humidity(self):
+    def current_humidity(self) -> float:
         base = METRICS["booth_humidity"][1]
         if self.drift_start is None:
             return base
         frac = min(1.0, (utcnow() - self.drift_start).total_seconds() / self.ramp)
         return base + (INCIDENT_HUMIDITY - base) * frac
 
-    def batch(self, n):
+    def batch(self, n: int) -> list[dict[str, Any]]:
         rows = []
         for _ in range(n):
             metric = self.rng.choice(list(METRICS))
             line, centre, jitter = METRICS[metric]
             if metric == "booth_humidity":
                 centre = self.current_humidity()
-            rows.append({
-                "STATION_ID": STATION_BY_LINE[line],
-                "LINE": line,
-                "METRIC": metric,
-                "VALUE": round(self.rng.gauss(centre, jitter), 3),
-                "EVENT_TS": iso(utcnow()),
-            })
+            rows.append(
+                {
+                    "STATION_ID": STATION_BY_LINE[line],
+                    "LINE": line,
+                    "METRIC": metric,
+                    "VALUE": round(self.rng.gauss(centre, jitter), 3),
+                    "EVENT_TS": iso(utcnow()),
+                }
+            )
         return rows
 
 
@@ -378,29 +403,35 @@ class TelemetrySimulator:
 # CDC sinks
 # ---------------------------------------------------------------------------
 class CdcSink:
-    def emit_insert(self, row, msn, lsn):
+    def emit_insert(self, row: dict[str, Any], msn: int, lsn: int) -> None:
         raise NotImplementedError
 
-    def emit_update(self, old_key, new_row, msn, lsn):
+    def emit_update(self, old_key: str, new_row: dict[str, Any], msn: int, lsn: int) -> None:
         raise NotImplementedError
 
-    def emit_delete(self, key, msn, lsn):
+    def emit_delete(self, key: str, msn: int, lsn: int) -> None:
         raise NotImplementedError
 
-    def tick_done(self):
+    def tick_done(self) -> None:
         pass
 
-    def close(self):
+    def close(self) -> None:
         pass
 
 
-def journal_event(pk, event_type, row, msn, lsn):
+def journal_event(
+    pk: str,
+    event_type: str,
+    row: dict[str, Any] | None,
+    msn: int,
+    lsn: int,
+) -> dict[str, Any]:
     """The connector's flat 'Snowflake Journal' wire shape.
 
     PRIMARY_KEY__* is the OLD key (identical to the new one here -- this lab's
     replication key is immutable). On DELETE every PAYLOAD__* is NULL.
     """
-    ev = {
+    ev: dict[str, Any] = {
         "PRIMARY_KEY__SCAN_ID": pk,
         "LEAST_SIGNIFICANT_POSITION": lsn,
         "MOST_SIGNIFICANT_POSITION": msn,
@@ -426,7 +457,7 @@ class JournalSink(CdcSink):
     eligible. That is what merge_loop() reproduces.
     """
 
-    def __init__(self, profile_path, profile, merge=True):
+    def __init__(self, profile_path: str, profile: dict[str, Any], merge: bool = True) -> None:
         from snowflake.ingest.streaming import StreamingIngestClient
 
         self.client = StreamingIngestClient(
@@ -436,6 +467,8 @@ class JournalSink(CdcSink):
             pipe_name=f"{JOURNAL_TABLE}-STREAMING",
             profile_json=profile_path,
         )
+        # HTTP 409 / ERR_CHANNEL_HAS_UNCOMMITTED_DATA: a prior run did not flush
+        # cleanly. Wait ~30s for the SDK to reconcile, then restart the producer.
         self.channel, _ = self.client.open_channel(channel_name="cdc_journal_1")
 
         # Separate SQL connection for the merge, exactly as the connector has.
@@ -446,28 +479,31 @@ class JournalSink(CdcSink):
             import snowflake.connector as sc
 
             self.cn = sc.connect(
-                account=profile["account"], user=profile["user"],
+                account=profile["account"],
+                user=profile["user"],
                 password=profile["personal_access_token"],
-                role="ACCOUNTADMIN", warehouse="HOL_WH",
-                database=CDC_DB, schema=CDC_SCHEMA,
+                role="ACCOUNTADMIN",
+                warehouse="HOL_WH",
+                database=CDC_DB,
+                schema=CDC_SCHEMA,
                 client_session_keep_alive=True,
                 session_parameters={"QUERY_TAG": MERGE_QUERY_TAG},
             )
             self.lock = threading.Lock()
 
-    def _send(self, ev, lsn):
+    def _send(self, ev: dict[str, Any], lsn: int) -> None:
         self.channel.append_row(ev, offset_token=str(lsn))
 
-    def emit_insert(self, row, msn, lsn):
+    def emit_insert(self, row: dict[str, Any], msn: int, lsn: int) -> None:
         self._send(journal_event(row["SCAN_ID"], EV_INSERT, row, msn, lsn), lsn)
 
-    def emit_update(self, old_key, new_row, msn, lsn):
+    def emit_update(self, old_key: str, new_row: dict[str, Any], msn: int, lsn: int) -> None:
         self._send(journal_event(old_key, EV_UPDATE, new_row, msn, lsn), lsn)
 
-    def emit_delete(self, key, msn, lsn):
+    def emit_delete(self, key: str, msn: int, lsn: int) -> None:
         self._send(journal_event(key, EV_DELETE, None, msn, lsn), lsn)
 
-    def run_merge(self):
+    def run_merge(self) -> tuple[int, float]:
         """Apply everything currently queued in the journal's stream.
 
         Returns (rows_affected, seconds). Reading the STREAM inside a committed
@@ -487,17 +523,17 @@ class JournalSink(CdcSink):
         self.rows_merged += affected
         return (affected, time.time() - started)
 
-    def close(self):
+    def close(self) -> None:
         try:
             self.channel.close()
             self.client.close()
-        except Exception:
-            pass
+        except Exception as exc:  # SDK teardown can raise various types; log and continue
+            log(f"[cdc journal] channel/client close error (ignored): {exc}")
         try:
             if self.cn is not None:
                 self.cn.close()
-        except Exception:
-            pass
+        except Exception as exc:  # same rationale
+            log(f"[cdc journal] connector close error (ignored): {exc}")
 
 
 INSERT_SQL = f"""
@@ -528,34 +564,58 @@ class DirectDmlSink(CdcSink):
     objects and lands rows in a second.
     """
 
-    def __init__(self, profile):
+    def __init__(self, profile: dict[str, Any]) -> None:
         import snowflake.connector as sc
 
         self.cn = sc.connect(
-            account=profile["account"], user=profile["user"],
+            account=profile["account"],
+            user=profile["user"],
             password=profile["personal_access_token"],
-            role="ACCOUNTADMIN", warehouse="HOL_WH",
-            database=CDC_DB, schema=CDC_SCHEMA,
+            role="ACCOUNTADMIN",
+            warehouse="HOL_WH",
+            database=CDC_DB,
+            schema=CDC_SCHEMA,
             client_session_keep_alive=True,
         )
         self.lock = threading.Lock()
-        self.pending = []
+        self.pending: list[Any] = []
 
-    def emit_insert(self, row, msn, lsn):
+    def emit_insert(self, row: dict[str, Any], _msn: int, _lsn: int) -> None:
         now = utcnow()
-        self.pending.append((
-            row["SCAN_ID"], row["FRAME_ID"], row["LINE"], row["SKU"], row["STATUS"],
-            row["DEFECT_CODE"], row["STATION_ID"], row["OPERATOR_ID"],
-            row["EVENT_TS"], row["UPDATED_TS"], now, now, False))
+        self.pending.append(
+            (
+                row["SCAN_ID"],
+                row["FRAME_ID"],
+                row["LINE"],
+                row["SKU"],
+                row["STATUS"],
+                row["DEFECT_CODE"],
+                row["STATION_ID"],
+                row["OPERATOR_ID"],
+                row["EVENT_TS"],
+                row["UPDATED_TS"],
+                now,
+                now,
+                False,
+            )
+        )
 
-    def emit_update(self, old_key, new_row, msn, lsn):
-        self._exec(UPDATE_SQL, (new_row["STATUS"], new_row["DEFECT_CODE"],
-                                new_row["UPDATED_TS"], utcnow(), old_key))
+    def emit_update(self, old_key: str, new_row: dict[str, Any], _msn: int, _lsn: int) -> None:
+        self._exec(
+            UPDATE_SQL,
+            (
+                new_row["STATUS"],
+                new_row["DEFECT_CODE"],
+                new_row["UPDATED_TS"],
+                utcnow(),
+                old_key,
+            ),
+        )
 
-    def emit_delete(self, key, msn, lsn):
+    def emit_delete(self, key: str, _msn: int, _lsn: int) -> None:
         self._exec(VOID_SQL, (utcnow(), key))
 
-    def tick_done(self):
+    def tick_done(self) -> None:
         if not self.pending:
             return
         batch, self.pending = self.pending, []
@@ -566,7 +626,7 @@ class DirectDmlSink(CdcSink):
             finally:
                 cur.close()
 
-    def _exec(self, sql, params):
+    def _exec(self, sql: str, params: tuple[Any, ...]) -> None:
         with self.lock:
             cur = self.cn.cursor()
             try:
@@ -574,39 +634,48 @@ class DirectDmlSink(CdcSink):
             finally:
                 cur.close()
 
-    def close(self):
+    def close(self) -> None:
         try:
             self.tick_done()
             self.cn.close()
-        except Exception:
-            pass
+        except Exception as exc:  # flush/close on teardown; log and continue
+            log(f"[cdc direct] close error (ignored): {exc}")
 
 
 class DryRunCdcSink(CdcSink):
-    def __init__(self, mode):
+    def __init__(self, mode: str) -> None:
         self.mode = mode
 
-    def _out(self, obj):
+    def _out(self, obj: Any) -> None:
         sys.stdout.write(json.dumps(obj, default=str) + "\n")
 
-    def emit_insert(self, row, msn, lsn):
-        self._out(journal_event(row["SCAN_ID"], EV_INSERT, row, msn, lsn)
-                  if self.mode == "journal" else {"op": "INSERT", **row})
+    def emit_insert(self, row: dict[str, Any], msn: int, lsn: int) -> None:
+        self._out(
+            journal_event(row["SCAN_ID"], EV_INSERT, row, msn, lsn)
+            if self.mode == "journal"
+            else {"op": "INSERT", **row}
+        )
 
-    def emit_update(self, old_key, new_row, msn, lsn):
-        self._out(journal_event(old_key, EV_UPDATE, new_row, msn, lsn)
-                  if self.mode == "journal" else {"op": "UPDATE", **new_row})
+    def emit_update(self, old_key: str, new_row: dict[str, Any], msn: int, lsn: int) -> None:
+        self._out(
+            journal_event(old_key, EV_UPDATE, new_row, msn, lsn)
+            if self.mode == "journal"
+            else {"op": "UPDATE", **new_row}
+        )
 
-    def emit_delete(self, key, msn, lsn):
-        self._out(journal_event(key, EV_DELETE, None, msn, lsn)
-                  if self.mode == "journal" else {"op": "DELETE(soft)", "SCAN_ID": key})
+    def emit_delete(self, key: str, msn: int, lsn: int) -> None:
+        self._out(
+            journal_event(key, EV_DELETE, None, msn, lsn)
+            if self.mode == "journal"
+            else {"op": "DELETE(soft)", "SCAN_ID": key}
+        )
 
 
 # ---------------------------------------------------------------------------
 # Telemetry sinks
 # ---------------------------------------------------------------------------
 class TelemetrySink:
-    def __init__(self, profile_path):
+    def __init__(self, profile_path: str) -> None:
         from snowflake.ingest.streaming import StreamingIngestClient
 
         self.client = StreamingIngestClient(
@@ -619,32 +688,32 @@ class TelemetrySink:
         self.channel, _ = self.client.open_channel(channel_name="telemetry_1")
         self.offset = 0
 
-    def send(self, rows):
+    def send(self, rows: list[dict[str, Any]]) -> None:
         for r in rows:
             self.channel.append_row(r, offset_token=str(self.offset))
             self.offset += 1
 
-    def close(self):
+    def close(self) -> None:
         try:
             self.channel.close()
             self.client.close()
-        except Exception:
-            pass
+        except Exception as exc:  # SDK teardown can raise various types; log and continue
+            log(f"[telem] channel/client close error (ignored): {exc}")
 
 
 class DryRunTelemetrySink:
-    def send(self, rows):
+    def send(self, rows: list[dict[str, Any]]) -> None:
         for r in rows:
             sys.stdout.write("TELEM " + json.dumps(r) + "\n")
 
-    def close(self):
+    def close(self) -> None:
         pass
 
 
 # ---------------------------------------------------------------------------
 # Threads
 # ---------------------------------------------------------------------------
-def merge_loop(sink, gate_seconds):
+def merge_loop(sink: JournalSink, gate_seconds: float) -> None:
     """The connector's merge control loop.
 
     The processor itself is timer-driven and continuous; a CRON expression acts
@@ -664,37 +733,43 @@ def merge_loop(sink, gate_seconds):
             break
         try:
             affected, secs = sink.run_merge()
-        except Exception as exc:
+        except Exception as exc:  # keep loop alive; merge errors are typically transient
             log(f"[merge] error: {exc}")
             continue
         if affected:
-            log(f"[merge] gate fired: {affected} rows applied in {secs:.1f}s "
-                f"(merges={sink.merges} rows_total={sink.rows_merged})")
+            log(
+                f"[merge] gate fired: {affected} rows applied in {secs:.1f}s "
+                f"(merges={sink.merges} rows_total={sink.rows_merged})"
+            )
         else:
             # Nothing queued. The connector yields here rather than merging.
             log("[merge] gate fired: nothing queued, skipped")
 
 
-def cdc_loop(sim, rate, status_every=15.0):
+def cdc_loop(sim: CdcSimulator, rate: float, status_every: float = 15.0) -> None:
     last_status = time.time()
     while not _stop.is_set():
         started = time.time()
         try:
             sim.tick(max(1, int(round(rate))))
-        except Exception as exc:
+        except Exception as exc:  # keep loop alive; tick errors are typically transient
             log(f"[cdc] error: {exc}")
             time.sleep(2.0)
             continue
         if time.time() - last_status >= status_every:
             c = sim.counts
-            log(f"[cdc] inserts={c['insert']} updates={c['update']} "
+            log(
+                f"[cdc] inserts={c['insert']} updates={c['update']} "
                 f"soft_deletes={c['delete']}"
-                f"{'  INCIDENT' if sim.incident_active() else ''}")
+                f"{'  INCIDENT' if sim.incident_active() else ''}"
+            )
             last_status = time.time()
         _stop.wait(max(0.0, 1.0 - (time.time() - started)))
 
 
-def telemetry_loop(sim, sink, rate, status_every=15.0):
+def telemetry_loop(
+    sim: TelemetrySimulator, sink: Any, rate: float, status_every: float = 15.0
+) -> None:
     sent = 0
     last_status = time.time()
     while not _stop.is_set():
@@ -703,7 +778,7 @@ def telemetry_loop(sim, sink, rate, status_every=15.0):
             rows = sim.batch(max(1, int(round(rate))))
             sink.send(rows)
             sent += len(rows)
-        except Exception as exc:
+        except Exception as exc:  # keep loop alive; batch errors are typically transient
             log(f"[telem] error: {exc}")
             time.sleep(2.0)
             continue
@@ -714,42 +789,87 @@ def telemetry_loop(sim, sink, rate, status_every=15.0):
 
 
 # ---------------------------------------------------------------------------
-def main():
+def main() -> None:
     ap = argparse.ArgumentParser(
-        description="Cascade Cycleworks plant-floor producer (CDC + telemetry).")
+        description="Cascade Cycleworks plant-floor producer (CDC + telemetry)."
+    )
     ap.add_argument("--profile", help="path to profile.json (required unless --dry-run)")
     ap.add_argument("--cdc", action="store_true", help="run the CDC source")
     ap.add_argument("--telemetry", action="store_true", help="run the telemetry source")
-    ap.add_argument("--cdc-mode", choices=["journal", "direct"], default="journal",
-                    help="journal = faithful connector path (default); "
-                         "direct = write the settled result straight to the table")
-    ap.add_argument("--merge-gate-seconds", type=float, default=60.0,
-                    help="the connector's CRON merge-eligibility gate, in seconds "
-                         "(default 60, matching the flow default of second :00 every "
-                         "minute). Lower it to watch CDC latency fall.")
-    ap.add_argument("--no-merge", action="store_true",
-                    help="write the journal but never merge it, so you can watch the "
-                         "journal fill while the destination table stays empty")
+    ap.add_argument(
+        "--cdc-mode",
+        choices=["journal", "direct"],
+        default="journal",
+        help="journal = faithful connector path (default); "
+        "direct = write the settled result straight to the table",
+    )
+    ap.add_argument(
+        "--merge-gate-seconds",
+        type=float,
+        default=60.0,
+        help="the connector's CRON merge-eligibility gate, in seconds "
+        "(default 60, matching the flow default of second :00 every "
+        "minute). Lower it to watch CDC latency fall.",
+    )
+    ap.add_argument(
+        "--no-merge",
+        action="store_true",
+        help="write the journal but never merge it, so you can watch the "
+        "journal fill while the destination table stays empty",
+    )
     ap.add_argument("--rate", type=float, default=2.0, help="scans/sec (default 2)")
-    ap.add_argument("--telemetry-rate", type=float, default=60.0,
-                    help="telemetry rows/sec (default 60)")
-    ap.add_argument("--update-rate", type=float, default=0.15,
-                    help="fraction of FAILED frames later overturned to PASS (default 0.15)")
-    ap.add_argument("--delete-rate", type=float, default=0.005,
-                    help="voided scans as a fraction of inserts (default 0.005)")
-    ap.add_argument("--incident", action="store_true",
-                    help="humidity drift, then a PAINT defect spike ~90s later")
-    ap.add_argument("--incident-after", type=float, default=90.0,
-                    help="seconds of humidity drift before defects spike (default 90)")
-    ap.add_argument("--incident-minutes", type=float, default=20.0,
-                    help="how long the defect spike lasts (default 20)")
-    ap.add_argument("--reinspect", action="store_true",
-                    help="burst of re-inspections: watch yield RECOVER")
-    ap.add_argument("--duration", type=float, default=0.0,
-                    help="stop after N seconds (default: run until Ctrl-C)")
+    ap.add_argument(
+        "--telemetry-rate",
+        type=float,
+        default=60.0,
+        help="telemetry rows/sec (default 60)",
+    )
+    ap.add_argument(
+        "--update-rate",
+        type=float,
+        default=0.15,
+        help="fraction of FAILED frames later overturned to PASS (default 0.15)",
+    )
+    ap.add_argument(
+        "--delete-rate",
+        type=float,
+        default=0.005,
+        help="voided scans as a fraction of inserts (default 0.005)",
+    )
+    ap.add_argument(
+        "--incident",
+        action="store_true",
+        help="humidity drift, then a PAINT defect spike ~90s later",
+    )
+    ap.add_argument(
+        "--incident-after",
+        type=float,
+        default=90.0,
+        help="seconds of humidity drift before defects spike (default 90)",
+    )
+    ap.add_argument(
+        "--incident-minutes",
+        type=float,
+        default=20.0,
+        help="how long the defect spike lasts (default 20)",
+    )
+    ap.add_argument(
+        "--reinspect",
+        action="store_true",
+        help="burst of re-inspections: watch yield RECOVER",
+    )
+    ap.add_argument(
+        "--duration",
+        type=float,
+        default=0.0,
+        help="stop after N seconds (default: run until Ctrl-C)",
+    )
     ap.add_argument("--seed", type=int, default=None)
-    ap.add_argument("--dry-run", action="store_true",
-                    help="print to stdout, no Snowflake connection")
+    ap.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="print to stdout, no Snowflake connection",
+    )
     args = ap.parse_args()
 
     if not args.cdc and not args.telemetry:
@@ -762,52 +882,68 @@ def main():
         with open(args.profile) as fh:
             profile = json.load(fh)
 
-    def handle_stop(_sig, _frm):
+    def handle_stop(_sig: Any, _frm: Any) -> None:
         log("stopping...")
         _stop.set()
 
     signal.signal(signal.SIGINT, handle_stop)
     signal.signal(signal.SIGTERM, handle_stop)
 
-    threads, sinks = [], []
+    threads: list[threading.Thread] = []
+    sinks: list[Any] = []
     cdc_sim = telem_sim = None
 
     if args.cdc:
         if args.dry_run:
-            sink = DryRunCdcSink(args.cdc_mode)
+            sink: Any = DryRunCdcSink(args.cdc_mode)
         elif args.cdc_mode == "journal":
             sink = JournalSink(args.profile, profile, merge=not args.no_merge)
         else:
             sink = DirectDmlSink(profile)
         sinks.append(sink)
         cdc_sim = CdcSimulator(args, sink)
-        threads.append(threading.Thread(target=cdc_loop, args=(cdc_sim, args.rate),
-                                        daemon=True, name="cdc"))
+        threads.append(
+            threading.Thread(target=cdc_loop, args=(cdc_sim, args.rate), daemon=True, name="cdc")
+        )
         # The merge processor is part of the connector, so it runs here -- not as
         # a Snowflake task. See merge_loop().
         if args.cdc_mode == "journal" and not args.dry_run and not args.no_merge:
-            threads.append(threading.Thread(
-                target=merge_loop, args=(sink, args.merge_gate_seconds),
-                daemon=True, name="merge"))
+            threads.append(
+                threading.Thread(
+                    target=merge_loop,
+                    args=(sink, args.merge_gate_seconds),
+                    daemon=True,
+                    name="merge",
+                )
+            )
 
     if args.telemetry:
         sink = DryRunTelemetrySink() if args.dry_run else TelemetrySink(args.profile)
         sinks.append(sink)
         telem_sim = TelemetrySimulator(args, sink)
-        threads.append(threading.Thread(target=telemetry_loop,
-                                        args=(telem_sim, sink, args.telemetry_rate),
-                                        daemon=True, name="telem"))
+        threads.append(
+            threading.Thread(
+                target=telemetry_loop,
+                args=(telem_sim, sink, args.telemetry_rate),
+                daemon=True,
+                name="telem",
+            )
+        )
 
-    log(f"starting: cdc={args.cdc} ({args.cdc_mode}) telemetry={args.telemetry} "
-        f"scans/s={args.rate} telem/s={args.telemetry_rate}")
+    log(
+        f"starting: cdc={args.cdc} ({args.cdc_mode}) telemetry={args.telemetry} "
+        f"scans/s={args.rate} telem/s={args.telemetry_rate}"
+    )
     if args.cdc and args.cdc_mode == "journal" and not args.dry_run:
         log(f"[cdc] journal: {CDC_DB}.{CDC_SCHEMA}.{JOURNAL_TABLE}")
         if args.no_merge:
             log("[merge] DISABLED (--no-merge): the destination table will not change")
         else:
-            log(f"[merge] this process issues the MERGE itself, on a "
+            log(
+                f"[merge] this process issues the MERGE itself, on a "
                 f"{args.merge_gate_seconds:.0f}s CRON gate -- the connector does not "
-                f"create a Snowflake task")
+                f"create a Snowflake task"
+            )
 
     for t in threads:
         t.start()
@@ -817,9 +953,11 @@ def main():
         if telem_sim:
             telem_sim.start_drift(args.incident_after)
         if cdc_sim:
-            def arm():
+
+            def arm() -> None:
                 if not _stop.wait(args.incident_after):
                     cdc_sim.start_incident(args.incident_minutes)
+
             threading.Thread(target=arm, daemon=True).start()
 
     try:
@@ -836,8 +974,9 @@ def main():
             s.close()
         if cdc_sim:
             c = cdc_sim.counts
-            log(f"final cdc: inserts={c['insert']} updates={c['update']} "
-                  f"soft_deletes={c['delete']}", flush=True)
+            log(
+                f"final cdc: inserts={c['insert']} updates={c['update']} soft_deletes={c['delete']}"
+            )
         log("stopped")
 
 

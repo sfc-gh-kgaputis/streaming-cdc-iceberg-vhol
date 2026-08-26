@@ -25,6 +25,6 @@ hands-on lab. Setup, the walkthrough, and troubleshooting are in
    table is created. `CREATE DYNAMIC ICEBERG TABLE` has no version clause and can
    only inherit them.
 2. **`CORTEX_ENABLED_CROSS_REGION`.** Defaults to `DISABLED` on a fresh account,
-   which degrades the agent in Part 6. `solutions/00_bootstrap.sql` sets it.
+   which degrades the agent in Part 4. `solutions/00_bootstrap.sql` sets it.
 
 `solutions/02_preflight.sql` checks both. Run it before building anything on top.

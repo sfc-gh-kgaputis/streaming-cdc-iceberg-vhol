@@ -1,0 +1,4 @@
+# Confirmed working: pyiceberg 0.11.1 + pyarrow 25.0.1, tested 25 Aug 2026
+# Install time: ~21 s on a warm cache, ~246 MB venv
+# NOTE: pandas is NOT included — use to_pylist() not to_pandas()
+pyiceberg[pyarrow]==0.11.1

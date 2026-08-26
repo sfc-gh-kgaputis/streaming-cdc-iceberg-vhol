@@ -7,6 +7,8 @@
 # that supports Iceberg v3 targets. Used for the telemetry feed.
 snowpipe-streaming==1.7.1
 
-# Used by the CDC simulator, which issues ordinary INSERT/UPDATE DML the way the
-# Openflow connector's MERGE would leave it.
+# Used by the CDC journal path and the direct fallback path. In the journal path
+# it drives the MERGE that the connector's merge processor issues over its own
+# Snowflake connection (see merge_loop()). In the direct path it writes settled
+# DML straight to the destination table.
 snowflake-connector-python==4.7.2

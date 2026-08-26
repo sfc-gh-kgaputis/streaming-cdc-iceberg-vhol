@@ -1,0 +1,17 @@
+definition_version: 2
+entities:
+  plant_floor_live:
+    type: streamlit
+    identifier:
+      name: PLANT_FLOOR_LIVE
+      database: MFG
+      schema: CDC
+    query_warehouse: HOL_WH
+    runtime_name: SYSTEM$ST_CONTAINER_RUNTIME_PY3_11
+    compute_pool: SYSTEM_COMPUTE_POOL_CPU
+    main_file: streamlit_app.py
+    artifacts:
+      - streamlit_app.py
+    # No pyproject.toml and no external_access_integrations needed:
+    # the app uses only packages pre-installed in the SiS container runtime
+    # (streamlit, pandas, altair, snowflake-snowpark-python).

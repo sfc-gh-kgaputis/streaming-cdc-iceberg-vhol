@@ -23,7 +23,7 @@ SELECT CURRENT_REGION()                     AS region,
        CURRENT_VERSION()                    AS version;
 
 -- 2. Cortex cross-region inference must not be DISABLED, or the agent step
---    in Part 6 will degrade or fail. Fixed by BLOCK 1 of 00_bootstrap.sql.
+--    in Part 4 will degrade or fail. Fixed by BLOCK 1 of 00_bootstrap.sql.
 SHOW PARAMETERS LIKE 'CORTEX_ENABLED_CROSS_REGION' IN ACCOUNT
   ->> SELECT "value" AS cross_region, "value" <> 'DISABLED' AS cortex_ok FROM $1;
 

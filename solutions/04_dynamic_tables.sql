@@ -1,5 +1,5 @@
 -- =====================================================================
--- 04_dynamic_tables.sql   Answer key for Parts 5 and 6
+-- 04_dynamic_tables.sql   Answer key for Part 3
 -- =====================================================================
 -- The pipeline. Four Dynamic ICEBERG Tables, every one of them refreshing
 -- INCREMENTALLY -- Snowflake recomputes only the groups that changed, not
@@ -170,7 +170,7 @@ LIMIT 10;
 
 
 -- =====================================================================
--- THE NEGATIVE EXAMPLE (Part 4) -- run it and read the error
+-- THE NEGATIVE EXAMPLE (Optional B) -- run it and read the error
 -- =====================================================================
 -- This is a real, instructive failure, not a contrived one. It is the first
 -- thing most people reach for.

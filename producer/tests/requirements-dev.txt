@@ -1,0 +1,3 @@
+# Dev/test dependencies — do NOT add to producer/requirements.txt.
+# Attendees do not run tests; this file is for builders only.
+pytest>=7.0

@@ -26,7 +26,7 @@ Source of truth: `solutions/06_agent.sql`
 
 ```sql
 -- =====================================================================
--- 05_agent.sql   Answer key for Part 6
+-- 06_agent.sql   Answer key for Part 4
 -- =====================================================================
 -- The Cascade Plant Analyst. A Cortex Agent grounded on the semantic view.
 --
@@ -49,17 +49,16 @@ Source of truth: `solutions/06_agent.sql`
 --  * ALTER ACCOUNT SET CORTEX_ENABLED_CROSS_REGION = 'ANY_REGION' must have
 --    run (00_bootstrap.sql, BLOCK 1). Without it the agent degrades or fails.
 --
+--  * Keep execution_environment in tool_resources. The Analyst tool needs a
+--    warehouse to run its generated SQL in, and the spec is accepted without
+--    one -- CREATE AGENT succeeds, then every question comes back as
+--    "internal error (request_id: ...)", code 391920, which mentions neither
+--    the warehouse nor the tool. Adding it is the whole fix.
+--
 -- WHERE TO CHAT WITH IT: Snowsight -> AI & ML -> Agents -> Cascade Plant Analyst,
 -- using the chat panel on the detail page. You do NOT need to Publish -- the
 -- agent already exists from this SQL. Publish is only for sharing a UI-edited
 -- version.
---
--- DO NOT DROP execution_environment FROM tool_resources. The Analyst tool needs a
--- warehouse to run its generated SQL in, and the spec is accepted without one --
--- CREATE AGENT succeeds, then every question fails with an opaque
--- "internal error (request_id: ...)" and error code 391920 that names neither the
--- warehouse nor the tool. Measured 26 Aug: adding it turned that error into a
--- correct answer with no other change.
 -- =====================================================================
 
 USE ROLE ACCOUNTADMIN;

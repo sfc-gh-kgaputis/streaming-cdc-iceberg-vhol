@@ -39,7 +39,7 @@ CREATE USER IF NOT EXISTS VHOLuser
 GRANT ROLE ACCOUNTADMIN TO USER VHOLuser;
 
 -- Cortex access is NOT implied by ACCOUNTADMIN -- these are database roles and
--- have to be granted explicitly, or the agent step in Part 8 fails.
+-- have to be granted explicitly, or the agent step in Part 4 fails.
 GRANT DATABASE ROLE SNOWFLAKE.CORTEX_USER  TO ROLE ACCOUNTADMIN;
 GRANT DATABASE ROLE SNOWFLAKE.COPILOT_USER TO ROLE ACCOUNTADMIN;
 
