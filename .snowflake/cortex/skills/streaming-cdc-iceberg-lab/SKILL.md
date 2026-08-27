@@ -91,8 +91,13 @@ v2 must be recreated. Run the preflight after creating tables and before buildin
   `VARIANT` requires v3.
 - Keep the `::TIMESTAMP_NTZ(6)` cast on every `TIME_SLICE()`. It returns its input's type, and
   scale 9 is rejected on v2.
-- Dynamic Iceberg tables: no `IF NOT EXISTS`, no `ALTER DYNAMIC ICEBERG TABLE`, `CATALOG` must
-  be `'SNOWFLAKE'`, no backfill.
+- **Cast the Gold layer's aggregates: `COUNT(*)` and `SUM()` to `NUMBER(9,0)`,
+  `ROUND(…, 2)` to `NUMBER(5,2)`.** Inferred precision reaches `NUMBER(29,2)` for a percentage
+  bounded at 100, and that width lands in the Iceberg schema an external engine reads in Part 6.
+  `solutions/04_dynamic_tables.sql` carries every cast.
+- Dynamic Iceberg tables: no `IF NOT EXISTS`, no `ALTER DYNAMIC ICEBERG TABLE`, no backfill. The
+  effective catalog must be `SNOWFLAKE`, which the schema defaults already ensure — do not add a
+  `CATALOG` clause to the DDL.
 - Snowpipe Streaming into Iceberg: no partitioned tables, no schema evolution.
 - Telemetry is queryable in **~30 s**, not instantly. State it as the observed baseline and
   name no mechanism — in particular not `MAX_CLIENT_LAG`, which is a Snowpipe Streaming
@@ -316,10 +321,11 @@ Block 3 — it is Snowsight-only and drops the user you are connected as.
   `refresh_mode = INCREMENTAL`, `is_iceberg = true`, and an empty `refresh_mode_reason`.
 - **Y (gold)** — yield by line for recent buckets. Three lines, each around 95–99% in steady
   state, with humidity populated for PAINT only.
-- **X (incident)** — PAINT `FIRST_PASS_YIELD_PCT` drops into the **80s** on the first, partly
-  affected bucket and the **high 70s** on a fully affected one, while WELD and ASSEMBLY stay
-  around 96–97%; `AVG_BOOTH_HUMIDITY` for PAINT climbs from ~44 into the 60s–70s; and `PAINT_RUN`
-  dominates the defect counts.
+- **X (incident)** — PAINT `FIRST_PASS_YIELD_PCT` drops well below 90, into the **70s or 80s**
+  depending on where in the 5-minute bucket the incident started; a fully affected bucket sits in
+  the **high 70s**, and if the mode change lands near a bucket boundary the first affected bucket
+  is already there. WELD and ASSEMBLY stay around 96–98%. `AVG_BOOTH_HUMIDITY` for PAINT climbs
+  from ~44 into the 60s–70s, and `PAINT_RUN` dominates the defect counts.
 - **R (recovery)** — PAINT yield rises again and
   `COUNT_IF(_SNOWFLAKE_UPDATED_AT > _SNOWFLAKE_INSERTED_AT)` on `QUALITY_INSPECTIONS` climbs. The
   Dynamic Tables stay INCREMENTAL.

@@ -567,9 +567,11 @@ Now watch the cascade arrive layer by layer, and time it:
 |---|---|---|
 | Booth humidity climbs ~44 → ~70 | `STATION_HEALTH` | ~30–60 s |
 | PAINT defects spike, `PAINT_RUN` dominates | `DEFECT_COUNTS_5MIN` | ~90 s later |
-| PAINT yield falls into the **80s**, then the high 70s | `YIELD_BY_LINE_5MIN` | ~1–2 min after that |
+| PAINT yield falls into the **70s or 80s** | `YIELD_BY_LINE_5MIN` | ~1–2 min after that |
 
-WELD and ASSEMBLY stay around 96–97% throughout. They are your control.
+Which one you land on depends on where in the 5-minute bucket the incident started: a partly
+affected bucket sits in the 80s, a fully affected one in the high 70s. WELD and ASSEMBLY stay
+around 96–98% throughout. They are your control.
 
 In the Snowsight agent tab, ask question 3:
 
