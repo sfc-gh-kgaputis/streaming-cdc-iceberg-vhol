@@ -99,7 +99,7 @@ Everything here is **pre-work**. Nothing installs during the session.
 | [Part 2](#part-2--watch-the-connectors-change-feed) | Start the producer; read the CDC journal and the merge gate |
 | [Part 3](#part-3--refine-it-with-dynamic-tables) | Four Dynamic Iceberg Tables over both feeds |
 | [Part 4](#part-4--ask-it-questions-in-english) | Semantic view, then a Cortex Agent over it |
-| [Part 5](#part-5--put-it-on-a-screen-and-watch-it-break) | A live dashboard, an incident, then a correction that rewrites history |
+| [Part 5](#part-5--deploy-the-streamlit-dashboard) | A live dashboard, an incident, then a correction that rewrites history |
 | [Part 6](#part-6--read-it-from-your-laptop) | Read the same tables with PyIceberg, no warehouse |
 | [Troubleshooting](docs/troubleshooting.md) | Symptoms, causes and fixes, grouped by Part |
 | [Cleanup](#cleanup) | Stop the spend. Do not skip it. |
@@ -528,7 +528,7 @@ detail page. You do not need to Publish. Ask the first two questions from
 **Checkpoint:** the numbers match what the semantic view returned, and the agent names the 5-minute
 interval it used. Keep this tab open; you need it in Part 5.
 
-## Part 5 — Put it on a screen, and watch it break
+## Part 5 — Deploy the Streamlit dashboard
 
 **Approach: direct execution**, then read.
 
