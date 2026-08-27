@@ -84,7 +84,7 @@ Everything here is **pre-work**. Nothing installs during the session.
 | `producer/` | The data producer. You start it once, in Part 2, and leave it running. `main.py` is the file you invoke; `cdc_simulator.py` is the simulated connector, and is worth reading. |
 | `solutions/` | The fast path: finished SQL for every Part, numbered to match, safe to run at any time. Plus `progress.sql` ("where am I?") and `09_cleanup.sql`. |
 | `external/` | Part 6: read your Iceberg tables from your laptop with PyIceberg. |
-| `docs/` | The architecture diagram, and the three agent questions. |
+| `docs/` | [Troubleshooting](docs/troubleshooting.md), [CDC internals](docs/cdc-internals.md), [producer reference](docs/producer.md), the architecture diagram, and the three agent questions. |
 | `dashboard/` | The live dashboard the presenter shares on screen. Not a lab step. |
 | `.snowflake/` | Two Cortex Code skills that load automatically. See [How the skills work](#how-the-skills-work). |
 
@@ -100,7 +100,7 @@ Everything here is **pre-work**. Nothing installs during the session.
 | [Part 5](#part-5--the-incident-and-the-recovery) | An incident, then a correction that rewrites history |
 | [Part 6](#part-6--read-it-from-your-laptop) | Read the same tables with PyIceberg, no warehouse |
 | [Optional A](#optional-a--look-inside-the-connector) · [Optional B](#optional-b--break-it-on-purpose) | Connector internals; a deliberate failure |
-| [Troubleshooting](#troubleshooting) | 27 symptoms with causes and fixes |
+| [Troubleshooting](docs/troubleshooting.md) | 27 symptoms with causes and fixes |
 | [Cleanup](#cleanup) | Stop the spend. Do not skip it. |
 
 ---
@@ -270,7 +270,7 @@ was computed for you.
 
 Confirm the version on the created table itself, with `iceberg_table_format_version`. The preflight
 below does that for every object. If something lands on v2, recreate it.
-[Troubleshooting](#troubleshooting) has the details.
+[Troubleshooting](docs/troubleshooting.md) has the details.
 
 The telemetry table's DDL contains no `CATALOG`, no `EXTERNAL_VOLUME` and no version. It inherits all
 three from the schema.
@@ -292,7 +292,7 @@ Run the preflight checks.
 
 **Checkpoint:** `aws_ok`, `cortex_ok`, `raw_iceberg_ok` and `analytics_iceberg_ok` all come back TRUE, every
 Iceberg object reports `is_v3 = TRUE`, and the stream reports `mode = APPEND_ONLY`.
-**Do not continue past a FALSE.** See [Troubleshooting](#troubleshooting). A wrong answer here gets
+**Do not continue past a FALSE.** See [Troubleshooting](docs/troubleshooting.md). A wrong answer here gets
 more expensive with every Part, so fix it now rather than after the next one.
 
 ## Part 2 — Watch the connector's change feed
@@ -314,12 +314,9 @@ targets and says so:
 [connector] journal stream ready
 ```
 
-If those three lines are missing, the connector found the objects already there.
-
-| Ingestion path | Who creates the target table |
-|---|---|
-| **Openflow CDC connector** | The **connector**. It "creates the schemas and destination tables matching the source tables"; you point it at a source and the objects appear. |
-| **Snowpipe Streaming client** | **You do.** The SDK auto-creates the *pipe*, never the table. Creating it is step 2 of Snowflake's own streaming quickstart. |
+If those three lines are missing, the connector found the objects already there. A managed connector
+provisions its own destination tables; a streaming client does not, which is why you wrote
+`STATION_TELEMETRY` yourself and not these three.
 
 **Start it once and leave it running for the rest of the lab.** You never stop or restart it; Part 5
 changes the data at the source instead.
@@ -333,12 +330,6 @@ changes the data at the source instead.
 ```
 
 In Part 5 this log shows the incident several seconds before any query does.
-
-Two sources, both over Snowpipe Streaming:
-
-- **CDC** → the journal. Inserts new scans, **updates** them when an inspector re-checks a frame, and
-  **soft-deletes** voided duplicate scans.
-- **Telemetry** → `STATION_TELEMETRY`, at ~60 rows/sec.
 
 Only the *connector* is simulated. See [What is real, and what is simulated](#what-is-real-and-what-is-simulated).
 
@@ -367,14 +358,9 @@ anywhere in this lab or in `solutions/`. Snowpipe Streaming auto-created them.
 Show me the journal's change events, the event-type mix, and the destination's lag.
 ```
 
-| `EVENT_TYPE` | What it carries |
-|---|---|
-| `IncrementalInsertRows` | every `PAYLOAD__*` populated |
-| `IncrementalUpdateRows` | `PAYLOAD__*` holds the **new** values; `PRIMARY_KEY__*` the **old** key |
-| `IncrementalDeleteRows` | every `PAYLOAD__*` is **NULL**; the key alone identifies the row |
-
-That last row is why the MERGE's insert branch needs
-`IFF(EVENT_TYPE='IncrementalDeleteRows', PRIMARY_KEY__INSPECTION_ID, PAYLOAD__INSPECTION_ID)`.
+Three `EVENT_TYPE` values come back: inserts, updates and deletes. Updates are what Part 5's recovery
+rides on. For the payload and key semantics of each, and why the MERGE needs an `IFF` on the delete case,
+see [How the CDC connector works](docs/cdc-internals.md).
 
 **In steady state:** the gap is roughly one minute of change events, around a hundred rows at the
 default rate. It grows until the gate fires, drops, and grows again. A gap that never shrinks means
@@ -385,8 +371,7 @@ backlog. Each merge starts at second **:00** of a minute and finishes in a secon
 latency here is a schedule you chose, not a throughput limit.
 
 **Build on the destination table, `QUALITY_INSPECTIONS`, never on the journal.** The journal is
-connector-internal: its name carries a generation counter and the connector prunes it on its own
-schedule. Part 3 reads `QUALITY_INSPECTIONS`.
+connector-internal and the connector prunes it. Part 3 reads `QUALITY_INSPECTIONS`.
 
 ## Part 3 — Refine it with Dynamic Tables
 
@@ -624,7 +609,8 @@ Both stand alone. Do either, both, or neither.
 
 ## Optional A — Look inside the connector
 
-Both prompts show how you would audit a real Openflow deployment.
+Both prompts show how you would audit a real Openflow deployment. The mechanics are in
+[How the CDC connector works](docs/cdc-internals.md).
 
 **Prompt:**
 
@@ -632,8 +618,7 @@ Both prompts show how you would audit a real Openflow deployment.
 Show me SF_METADATA, what type it really is, and pull the offset token out of it.
 ```
 
-`SF_METADATA` is a `VARIANT` holding a JSON **string**, not a parsed object, because that is what the
-connector writes. Parse it before you subscript it.
+`SF_METADATA` is a `VARIANT` holding a JSON **string**. Parse it before you subscript it.
 
 **Checkpoint:** `SF_METADATA:offset_token` returns `NULL` and `TYPEOF(SF_METADATA)` says `VARCHAR`,
 while `PARSE_JSON(SF_METADATA::STRING):offset_token` returns an actual offset.
@@ -644,8 +629,8 @@ while `PARSE_JSON(SF_METADATA::STRING):offset_token` returns an actual offset.
 Find the connector's merges in query history using its query tag.
 ```
 
-The connector stamps every merge with a `QUERY_TAG` naming itself, its operation and its merge strategy.
-Filter `QUERY_HISTORY` on that tag.
+Every merge carries a `QUERY_TAG` naming the application, operation and merge strategy. Filter
+`QUERY_HISTORY` on it.
 
 **Checkpoint:** roughly one MERGE per minute since you started the producer, each beginning at second
 `:00` and finishing in a second or two. Many short merges on a schedule, not one long-running one.
@@ -664,72 +649,6 @@ counted at their natural grain and ranked at read time instead.
 
 ---
 
-
-# Troubleshooting
-
-| Symptom | Cause | Fix |
-|---|---|---|
-| `raw_iceberg_ok` or `analytics_iceberg_ok` is FALSE, or an object reports v2 | Your session's current schema was not one that resolves `ICEBERG_VERSION_DEFAULT = 3` when the table was created | Re-run `01_environment.sql` — it sets the database-level default and issues `USE SCHEMA` before each create. Then **recreate** any v2 table. |
-| `Unsupported data type 'VARIANT' for iceberg tables` | Same cause — the table resolved to v2 | Same fix. This is the error the journal throws, since `SF_METADATA` is `VARIANT`. |
-| `SHOW PARAMETERS` says 3 but a table comes out v2 | Not a contradiction. For a plain `CREATE ICEBERG TABLE` the version is applied from the *session's* schema, whatever the target schema reports | `USE SCHEMA MFG.RAW;` immediately before the `CREATE`. Never trust `SHOW PARAMETERS` as proof — only a created table's `iceberg_table_format_version` counts. |
-| `cortex_ok` is FALSE | `CORTEX_ENABLED_CROSS_REGION` still `DISABLED` | Re-run that `ALTER ACCOUNT` from Setup B as ACCOUNTADMIN in Snowsight. |
-| Rejected `TIMESTAMP_NTZ(9)` from `TIME_SLICE()` | The Dynamic Table landed on v2, because `MFG.ANALYTICS`'s own `ICEBERG_VERSION_DEFAULT` was not 3 when it was created — a Dynamic Table reads the target schema and has no version clause to override with | Set the three defaults on `MFG.ANALYTICS` (`01_environment.sql` does), confirm with `analytics_iceberg_ok`, then recreate the Dynamic Table. |
-| `refresh_mode` comes back `FULL` | Something in the query blocks incremental refresh | Read `refresh_mode_reason`; it names the cause. `APPROX_PERCENTILE` is a common one. |
-| `Change tracking is not supported ... 'MODE'` | `MODE()` in a Dynamic Table | Expected — that is Optional B. Count at defect grain, rank at read time. |
-| Destination table stays behind the journal | That is the merge gate, by design | Check `QUERY_HISTORY` for the connector's `QUERY_TAG`. Merges fire at second :00 each minute. Nothing to fix. |
-| Destination table gets **no** rows at all | The producer was started with `--no-merge`, or the journal objects do not exist | Restart the producer without `--no-merge`, and confirm the journal and its stream exist. |
-| `SF_METADATA:offset_token` returns NULL | It holds a JSON string, not an object — faithful connector behaviour | `PARSE_JSON(SF_METADATA::STRING):offset_token` |
-| Telemetry rows take ~30 s to appear | Normal flush behaviour for a streaming Iceberg target | Expected behaviour, not a fault. |
-| Producer: `ERR_CHANNEL_HAS_UNCOMMITTED_DATA` (HTTP 409) | You stopped the producer and started it again within ~30 s, reopening a channel that was still committing | The lab never asks you to restart it — Part 5 changes modes through the control table instead. If you did stop it, wait ~30 s. Never run two producers at once. |
-| Producer: `externally-managed-environment` | macOS Homebrew Python, PEP 668 | Use the venv interpreter, not system Python. Ask Cortex Code to redo the venv step. |
-| Snowsight: `SQL compilation error: Empty SQL statement` at the end of a `solutions/` file | Snowsight parses whatever follows the last statement as a statement, so a file ending in comments errors | Harmless — everything above it ran. Every file now ends with a `SELECT '… complete'` so you get a confirmation row instead. If you see it, check the statements above succeeded. |
-| You did not copy `token_secret` in time | It is shown exactly once | `ALTER USER HOL_USER ROTATE PROGRAMMATIC ACCESS TOKEN HOL_PAT;` in Snowsight returns a fresh one. Do not prompt Cortex Code for it — it is not connected yet. |
-| Part 5: `SIMULATOR_CONTROL does not exist`, or the producer logs `[control] read failed` | Part 1 created the landing tables but not the control table | Run [`solutions/01_environment.sql`](solutions/01_environment.sql), which creates all three. Then re-run the Part 5 prompt. |
-| Producer: authentication fails | Token expired, or `profile.json` has the wrong account | Tokens last 7 days. Re-mint in Snowsight and rebuild `profile.json`. |
-| Agent: `internal error (request_id: …)`, code 391920 | The Analyst tool has no `execution_environment`, so its generated SQL has no warehouse to run in | Add `"execution_environment": { "type": "warehouse", "warehouse": "HOL_WH" }` to the `tool_resources` entry and re-run `CREATE OR REPLACE AGENT`. |
-| Agent answers with stale numbers | The pipeline lags 1–2 min by design | Ask again in a minute. "Right now" means the most recent complete buckets. |
-| Agent errors or lists no models | Cross-region inference disabled | See `cortex_ok` above. |
-| Agent: *"not an allowed model for Agent"* | A specific orchestration model was pinned | Use `"orchestration": "auto"`. Agent orchestration has a narrower allowed-models list than Cortex `COMPLETE`. |
-| Part 6: `ModuleNotFoundError: No module named 'pyiceberg'` | The script ran on system Python, or Setup D installed only the producer's requirements | Run it with the venv interpreter, `.venv/bin/python external/read_iceberg.py`. If the import still fails, `.venv/bin/pip install -r external/requirements.txt`. |
-| External read: 401 with an empty body | A PAT presented directly as a Bearer token. It must be exchanged for an access token first | `external/read_iceberg.py` does the exchange. If you wrote your own, see the comments in it. |
-| External read: `OAuthError: unauthorized_client` | PyIceberg's `credential` property formats the request in a way Horizon rejects | Pass `token=<access_token>` instead. |
-| External read: HTTP 404 on the catalog | Catalog or namespace name is lower-case | Uppercase them. `warehouse=` is the **database** name, uppercase. |
-| Wrong account shows up in `profile.json` | The `cortex` CLI's default connection was used instead of the active one | The account must come from SQL: `SELECT CURRENT_ORGANIZATION_NAME() \|\| '-' \|\| CURRENT_ACCOUNT_NAME()`. |
-
----
-
-# The producer (reference)
-
-You never need to edit it. Run it with the venv interpreter so it finds the SDK:
-`.venv/bin/python` on macOS/Linux, `.venv\Scripts\python.exe` on Windows.
-
-You start it **once**, in Part 2, with both sources:
-
-```bash
-.venv/bin/python producer/main.py --profile producer/profile.json --cdc --telemetry
-```
-
-That is the only command the lab asks you to run. Part 5's incident and recovery are triggered by
-writing to `MFG.RAW.SIMULATOR_CONTROL` while it keeps streaming.
-
-```bash
-# see what it generates, no Snowflake account needed
-.venv/bin/python producer/main.py --dry-run --cdc --seed 42
-```
-
-`--incident` and `--reinspect` also exist as startup flags, and `--no-control` ignores the control table
-entirely. They are for rehearsing from a shell, and they require stopping the producer. You do not need
-them.
-
-`--rate` sets scans/sec (default 2), `--telemetry-rate` sets telemetry rows/sec (default 60).
-`--seed` makes a run reproducible. `--help` lists the rest.
-
-`--cdc-mode` picks how the CDC half writes:
-
-- `journal` (default). Change events go to the journal over Snowpipe Streaming, and the producer issues
-  the MERGE on its CRON gate. This is the path the lab uses.
-- `direct`. Writes the settled result straight to `QUALITY_INSPECTIONS` with ordinary DML: no journal, no
-  stream, no merge gate. Use it only if the journal objects are missing and you need rows flowing.
 
 # How the skills work
 
