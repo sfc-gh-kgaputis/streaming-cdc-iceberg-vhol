@@ -285,7 +285,10 @@ reopening a channel too soon.
 **Deploying the live dashboard — Part 5's first step.** For *deploy the dashboard*, *the plant floor
 dashboard*, or *I want to see it live*. **Deploy the file that ships in `dashboard/`. Never
 generate, rewrite or "improve" it** — see *Not attendee build steps*. `PUT` works over the SQL
-connection, so no `snow` CLI and no local server:
+connection, so no `snow` CLI and no local server. **`dashboard/snowflake.yml` also describes this
+app, and you should not use it.** It is a valid `snow streamlit deploy` definition kept for anyone
+working outside Cortex Code, but that path needs the CLI installed and its own connection, neither
+of which the lab sets up. Deploy with the four statements below:
 
 ```sql
 CREATE STAGE IF NOT EXISTS MFG.ANALYTICS.DASHBOARD_STAGE DIRECTORY = (ENABLE = TRUE);

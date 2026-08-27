@@ -13,6 +13,6 @@ entities:
       - environment.yml
     # Warehouse runtime: no compute_pool and no runtime_name. A container
     # runtime needs a compute pool node to start before the app serves, and
-    # the app only reads three Dynamic Tables, so the pool buys nothing here.
+    # the app only reads two Dynamic Tables, so the pool buys nothing here.
     # environment.yml pins Streamlit: an unpinned warehouse-runtime app came up
     # on a build with no st.fragment, which the auto-refresh needs.
