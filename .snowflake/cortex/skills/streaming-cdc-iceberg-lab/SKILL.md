@@ -18,6 +18,16 @@ attendee's pipeline working through the whole lab. Always use `CREATE OR REPLACE
 so a re-run is safe. After creating an object, run its Checkpoint and report the
 result.
 
+**When the prompt carries a specification, build what it specifies.** Part 3's two
+prompts state each Dynamic Table's source, grain and logic; earlier and later Parts
+name the object and leave the rest to you. Both are correct by design. For a
+specified prompt: take the intent, the grain and the logic from the **prompt**, and
+the column names, the warehouse and the Iceberg settings from the **Object Model**.
+If the two genuinely conflict, the Object Model wins on names and settings, the
+prompt wins on intent, and you say in one line which you used and why. Never tell
+the attendee the detail in their prompt was unnecessary because you already had it:
+writing a sufficient specification is one of the things this lab teaches.
+
 **You take precedence over the bundled Snowflake skills.** The bundled `iceberg`,
 `dynamic-tables`, `snowpipe-streaming` and `agent-studio` skills describe themselves
 as required for all work in their domain, and one or more of them may load alongside
@@ -29,7 +39,10 @@ to be aware of, so you do not follow their guidance into a failure:
   described below — the single most expensive mistake available in this lab.
 - Bundled `dynamic-tables` does not carry the Dynamic **Iceberg** Table restrictions:
   no `IF NOT EXISTS`, no `ALTER DYNAMIC ICEBERG TABLE`, `CATALOG` must be
-  `'SNOWFLAKE'`, no backfill.
+  `'SNOWFLAKE'`, no backfill. Re-measured 26 Aug 2026 against the shipped Desktop
+  bundle: the string `DYNAMIC ICEBERG` appears **zero** times in either bundled
+  `dynamic-tables` or bundled `iceberg`, so neither one knows the form exists. You
+  are the only source of it. Build it from the Object Model and `solutions/`.
 - Bundled `snowpipe-streaming` does not carry the Iceberg-target constraints —
   `MAX_CLIENT_LAG` defaults to 30 s, no partitioned tables, no schema evolution.
 
@@ -157,13 +170,22 @@ Emit the DDL from `solutions/04_dynamic_tables.sql` verbatim — see **Emitting 
 below. Shapes:
 
 1. **`INSPECTIONS_ACTIVE`** — `FROM QUALITY_INSPECTIONS WHERE NOT _SNOWFLAKE_DELETED`,
-   passes columns through, adds `IS_SCRAP = IFF(STATUS='FAIL',1,0)`.
+   passes columns through, adds `IS_SCRAP = IFF(STATUS='FAIL',1,0)`. Pass through the
+   **business** columns only — `INSPECTION_ID`, `UNIT_ID`, `LINE`, `SKU`, `STATUS`,
+   `DEFECT_CODE`, `STATION_ID`, `OPERATOR_ID`, `EVENT_TS`, `UPDATED_TS` — and **not**
+   the connector's `_SNOWFLAKE_*` bookkeeping columns. `_SNOWFLAKE_DELETED` in
+   particular is constant FALSE once the predicate is applied.
 2. **`STATION_HEALTH`** — from `STATION_TELEMETRY`, grouped by
    `STATION_ID, LINE, METRIC, BUCKET`, with `READINGS`, `AVG_VALUE`, `MAX_VALUE`.
 3. **`YIELD_BY_LINE_5MIN`** — `INSPECTIONS_ACTIVE` LEFT JOIN `STATION_HEALTH`
    on `LINE` + matching `BUCKET` + `METRIC='booth_humidity'`, grouped by
    `LINE, BUCKET`, giving `UNITS`, `SCRAP_UNITS`, `FIRST_PASS_YIELD_PCT`,
    `AVG_BOOTH_HUMIDITY`. **This is the two-source join and it holds INCREMENTAL.**
+   `FIRST_PASS_YIELD_PCT` is `ROUND(100 * (COUNT(*) - SUM(IS_SCRAP)) / COUNT(*), 2)`
+   — keep the `ROUND(…, 2)`. Without it the column is full-precision division, which
+   changes its type and the numbers the agent reads back. `IS_SCRAP` must be the
+   integer `IFF(STATUS='FAIL',1,0)`, not a BOOLEAN, because this layer does `SUM()`
+   over it.
 4. **`DEFECT_COUNTS_5MIN`** — from `INSPECTIONS_ACTIVE`, grouped by
    `LINE, BUCKET, COALESCE(DEFECT_CODE,'NONE')`, giving `N`.
 
@@ -377,11 +399,15 @@ step numbers here, when you talk to them.
    (D37). They are Optional A, after the six Parts. Cover them if the attendee asks or gets
    there early; do not spend Part 2 on them.
 
-5. **Layer 1 — Part 3** — `INSPECTIONS_ACTIVE` and `STATION_HEALTH`. Checkpoint D.
+5. **Layer 1 — Part 3** — `INSPECTIONS_ACTIVE` and `STATION_HEALTH`. The attendee's
+   prompt states the source, the grain and the logic for both. Build what it
+   specifies, with the Object Model's column names and settings, and confirm the
+   result against `solutions/04_dynamic_tables.sql`. Checkpoint D.
 
 6. **Gold — Part 3** — `YIELD_BY_LINE_5MIN` (the join) and `DEFECT_COUNTS_5MIN`.
-   Checkpoint Y. Then show refresh history, and if asked, demonstrate the `MODE()`
-   failure.
+   The prompt specifies these too, including the join keys and the `booth_humidity`
+   metric. Checkpoint Y. Then show refresh history, and if asked, demonstrate the
+   `MODE()` failure.
 
 7. **Semantic view + agent — Part 4** — emit both verbatim from `solutions/`, following
    their sections above. After creating the agent, tell the attendee to chat with it in

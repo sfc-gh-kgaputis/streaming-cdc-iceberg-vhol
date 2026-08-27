@@ -10,7 +10,7 @@ and an **AI agent** explains what is happening on the plant floor. You build it 
 You leave with one open lakehouse: governed by Snowflake, and readable by any engine that speaks
 Iceberg. In Part 6 you prove that from your own laptop.
 
-![Two feeds land in Snowflake-managed Apache Iceberg v3 tables. A simulated Openflow Postgres CDC connector appends change events to a journal table over Snowpipe Streaming, and an append-only stream feeds a MERGE that maintains the QUALITY_INSPECTIONS destination table with soft deletes. In parallel, station telemetry streams directly into the STATION_TELEMETRY Iceberg table. Four Dynamic Iceberg Tables refine both feeds incrementally: INSPECTIONS_ACTIVE filters soft-deleted rows and STATION_HEALTH rolls up telemetry, then YIELD_BY_LINE_5MIN joins scans to telemetry per five-minute bucket and DEFECT_COUNTS_5MIN counts defects. A semantic view sits over the gold tables, a Cortex Agent answers questions over the semantic view, and PyIceberg reads the same gold tables from outside Snowflake through the Horizon Catalog.](docs/architecture.svg)
+![Two feeds land in Snowflake-managed Apache Iceberg v3 tables, both over Snowpipe Streaming. Station telemetry streams straight into the STATION_TELEMETRY Iceberg table. In parallel, a simulated Openflow Postgres CDC connector appends change events to the QUALITY_INSPECTIONS_JOURNAL Iceberg table, and an APPEND_ONLY stream on that journal feeds a MERGE the connector issues itself on a thirty-second gate, maintaining the QUALITY_INSPECTIONS destination table with soft deletes. Four Dynamic Iceberg Tables refine both feeds incrementally on a one-minute target lag: STATION_HEALTH rolls up telemetry and INSPECTIONS_ACTIVE filters soft-deleted rows, then YIELD_BY_LINE_5MIN joins those two on line and five-minute bucket while DEFECT_COUNTS_5MIN counts defects at their natural grain. The semantic view PLANT_FLOOR_SV sits over three tables — YIELD_BY_LINE_5MIN, DEFECT_COUNTS_5MIN and STATION_HEALTH, which reaches the view directly as well as through the join — and a Cortex Agent answers questions through that view. Outside Snowflake, PyIceberg on your laptop reads the same gold Iceberg tables through the Horizon Catalog with vended credentials, using no warehouse.](docs/architecture.svg)
 
 ## The scenario
 
@@ -51,10 +51,11 @@ are getting it. Read the plant as a worked example, not as the subject.
   order of the two right.
 - **The output is open Apache Iceberg, not a Snowflake format.** Any engine that speaks Iceberg reads the
   same bytes, with no Snowflake compute in the path. Here: PyIceberg, on your own laptop, in Part 6.
-- **You build all of it by prompting rather than by pasting SQL, and a bundled skill is what makes that
-  reliable.** The skill carries the object model and the conventions, so a one-line prompt produces
-  exactly the right object. Write one for your own stack and you stop re-explaining yourself on every
-  task.
+- **You build all of it by prompting, and a prompt is reliable when a sufficient specification meets a
+  skill that pins your conventions.** You state the object, the grain and the logic; the skill supplies
+  the column names and the platform settings, so you stop restating them on every task. Here: Part 3
+  specifies four Dynamic Tables in two prompts. Write a skill for your own stack and the same split
+  works there.
 
 ## What is real, and what is simulated
 
@@ -415,10 +416,22 @@ Part 3 reads.
 **Approach: generate then confirm.** One predicate in here is the difference between a correct
 pipeline and a plausible-looking wrong one. Read for it.
 
+**Write the specification, not just the object name.** The two prompts in this Part state the grain and
+the logic, and leave the column names and the Iceberg settings to the lab's skill. That split is the
+part that transfers: on a stack with no lab skill, the specification is what you supply.
+
 **Prompt:**
 
 ```text
-Create the two layer-one Dynamic Tables, INSPECTIONS_ACTIVE and STATION_HEALTH.
+Create two Dynamic Iceberg Tables in MFG.ANALYTICS, target lag 1 minute,
+refresh mode INCREMENTAL.
+
+INSPECTIONS_ACTIVE: the business columns from MFG.RAW.QUALITY_INSPECTIONS, not the
+connector's bookkeeping columns, excluding rows it has soft-deleted, plus a
+per-row scrap flag.
+
+STATION_HEALTH: from MFG.RAW.STATION_TELEMETRY, one row per station, line,
+metric and 5-minute bucket, with the reading count, average and maximum.
 ```
 
 `INSPECTIONS_ACTIVE` carries the predicate that matters: `WHERE NOT _SNOWFLAKE_DELETED`. A CDC
@@ -438,7 +451,15 @@ Read it rather than guessing.
 **Prompt:**
 
 ```text
-Create the two Gold Dynamic Tables, YIELD_BY_LINE_5MIN and DEFECT_COUNTS_5MIN.
+Create two more Dynamic Iceberg Tables in MFG.ANALYTICS, same lag and
+refresh mode.
+
+YIELD_BY_LINE_5MIN: units, scrap units and first-pass yield percent per line
+per 5-minute bucket from INSPECTIONS_ACTIVE, left joined to STATION_HEALTH on
+the same line and bucket to carry booth humidity.
+
+DEFECT_COUNTS_5MIN: a count per line, 5-minute bucket and defect code from
+INSPECTIONS_ACTIVE, with no-defect rows counted as NONE.
 ```
 
 `YIELD_BY_LINE_5MIN` is the join that pays for the second data source. One feed tells you *what*
@@ -747,7 +768,7 @@ this folder. There is nothing to install, and nothing to type.
 
 | Skill | What it carries |
 |---|---|
-| `streaming-cdc-iceberg-lab` | The object model, the measured Iceberg constraints, every checkpoint, and the rules for building each layer. This is why a one-line prompt produces exactly the right table. |
+| `streaming-cdc-iceberg-lab` | The object model, the measured Iceberg constraints, every checkpoint, and the rules for building each layer. It pins the conventions, so your prompts can state intent instead of restating them. |
 | `iceberg-external-read` | Part 6 only: the Horizon catalog auth path and its two traps. Separate because it is a standalone activity that nothing else depends on. |
 
 Neither keeps a copy of the DDL. Both point at `solutions/`, so there is only ever one version of any
@@ -756,6 +777,11 @@ statement.
 A prompt like *"Run the preflight checks"* contains no object names, no schema, no Iceberg settings. It
 works because the skill already put all of that in context. Write one for your own stack and you stop
 re-explaining your conventions to an agent on every task.
+
+Where you are **building** an object rather than inspecting one, put the specification in the prompt:
+state the grain and the logic, and let the skill supply the column names and the Iceberg settings. Part 3
+is where the lab does this. That is the division to carry to your own stack, where nothing pins your
+conventions until you write it.
 
 **Naming a skill with `$`.** Auto-loading is the mechanism here, so almost every prompt in this lab is
 plain English. But you can always name a skill explicitly, and the lab does it twice, in Setup C and in
