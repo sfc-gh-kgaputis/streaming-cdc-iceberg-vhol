@@ -557,8 +557,8 @@ the last 15 minutes yet.
 The caption carries two different clocks. **App refresh** is when the page last drew itself. **Gold
 lag** is how far behind the source your Gold tables actually are, in **seconds** — Snowflake reports
 it per Dynamic Table as `CURRENT_TIMESTAMP()` minus the `DATA_TIMESTAMP` of its last refresh, the point
-in time up to which all base-table data is included. Expect roughly **30–90 s** against a
-`TARGET_LAG` of one minute. It is not the age of the newest 5-minute bucket, which runs several
+in time up to which all base-table data is included. Against a `TARGET_LAG` of one minute it stays
+**under a minute** — it read **18 s** on a freshly built pipeline. It is not the age of the newest 5-minute bucket, which runs several
 minutes older because `TIME_SLICE` floors each bucket to its start.
 
 Now cause an incident. The producer is still running from Part 2, and it stays running. What changes is
