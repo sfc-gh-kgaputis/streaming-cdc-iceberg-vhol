@@ -51,11 +51,9 @@ are getting it. Read the plant as a worked example, not as the subject.
   order of the two right.
 - **The output is open Apache Iceberg, not a Snowflake format.** Any engine that speaks Iceberg reads the
   same bytes, with no Snowflake compute in the path. Here: PyIceberg, on your own laptop, in Part 6.
-- **You build all of it by prompting, and a prompt is reliable when a sufficient specification meets a
-  skill that pins your conventions.** You state the object, the grain and the logic; the skill supplies
-  the column names and the platform settings, so you stop restating them on every task. Here: Part 3
-  specifies four Dynamic Tables in two prompts. Write a skill for your own stack and the same split
-  works there.
+- **You build all of it by prompting rather than by pasting SQL.** A prompt that names the object, the
+  grain and the logic gets you the right table; a skill carries your conventions so you stop restating
+  them. Here: four Dynamic Tables from two prompts.
 
 ## What is real, and what is simulated
 
@@ -82,10 +80,9 @@ Everything here is **pre-work**. Nothing installs during the session.
 - A Snowflake trial account, created with the signup link provided for this event. You will be
   ACCOUNTADMIN.
 - **Cortex Code Desktop**, the desktop application specifically
-  ([download](https://www.snowflake.com/en/product/snowflake-coco/downloads/)). Not the CLI: the
-  Cortex Code **CLI** is unavailable on standard Snowflake trial accounts. Not the Snowsight version
-  either: it has no local shell or filesystem, so it cannot create a virtual environment or run the
-  producer.
+  ([download](https://www.snowflake.com/en/product/snowflake-coco/downloads/)). Use Desktop, not the
+  CLI and not the Snowsight version: the CLI is not offered on standard trial accounts, and Snowsight
+  has no local shell, so it cannot create a virtual environment or run the producer.
 - **Snowsight** in a browser tab, logged in to the same account. You will switch to it twice.
 - **Git** and **Python 3.9+** locally.
 
@@ -100,11 +97,26 @@ Everything here is **pre-work**. Nothing installs during the session.
 | `dashboard/` | The live dashboard the presenter shares on screen. Not a lab step. |
 | `.snowflake/` | Two Cortex Code skills that load automatically. See [How the skills work](#how-the-skills-work). |
 
+## Contents
+
+| | |
+|---|---|
+| [Setup A–D](#setup--do-this-before-the-session) | Pre-work: repo, account bootstrap, connection, local environment |
+| [Part 1](#part-1--land-both-feeds-in-iceberg) | Create the Iceberg targets and both landing tables |
+| [Part 2](#part-2--watch-the-connectors-change-feed) | Start the producer; read the CDC journal and the merge gate |
+| [Part 3](#part-3--refine-it-with-dynamic-tables) | Four Dynamic Iceberg Tables over both feeds |
+| [Part 4](#part-4--ask-it-questions-in-english) | Semantic view, then a Cortex Agent over it |
+| [Part 5](#part-5--the-incident-and-the-recovery) | An incident, then a correction that rewrites history |
+| [Part 6](#part-6--read-it-from-your-laptop) | Read the same tables with PyIceberg, no warehouse |
+| [Optional A](#optional-a--look-inside-the-connector) · [Optional B](#optional-b--break-it-on-purpose) | Connector internals; a deliberate failure |
+| [Troubleshooting](#troubleshooting) | 27 symptoms with causes and fixes |
+| [Cleanup](#cleanup) | Stop the spend. Do not skip it. |
+
 ---
 
 # Setup — do this before the session
 
-Do these in order. If you arrive with all four checkpoints green, you will keep pace.
+Do these in order.
 
 ## A. Get the lab files
 
@@ -114,9 +126,6 @@ Do these in order. If you arrive with all four checkpoints green, you will keep 
    git clone https://github.com/sfc-gh-kgaputis/streaming-cdc-iceberg-vhol.git
    cd streaming-cdc-iceberg-vhol
    ```
-
-   Both skills load automatically because they live in `.snowflake/cortex/skills/`. There is nothing
-   to install.
 
 ## B. Bootstrap the account (Snowsight)
 
@@ -207,10 +216,9 @@ Do these in order. If you arrive with all four checkpoints green, you will keep 
    Set up the local environment: the venv, dependencies, and producer/profile.json.
    ```
 
-   The skill handles the rest: detecting your OS, using the right interpreter path for it, and why
-   macOS needs a virtual environment. It installs both requirement sets, `producer/requirements.txt`
-   for the producer and `external/requirements.txt` for Part 6, so nothing installs during the session.
-   Three packages, about fifteen seconds. Your token is never printed to the chat.
+   Both requirement sets install: `producer/requirements.txt` and `external/requirements.txt` for
+   Part 6, so nothing installs during the session. Three packages, about fifteen seconds. Your token
+   is never printed to the chat.
 
    **Checkpoint:** `producer/profile.json` exists with five keys, and both of these succeed without
    touching Snowflake:
@@ -226,7 +234,7 @@ Do these in order. If you arrive with all four checkpoints green, you will keep 
 
 Six Parts, then two optional acts. Do the optional acts if you are ahead.
 
-If you heard the three Acts on the overview slide, this is how they map:
+The six Parts map to three acts:
 
 | Act | Parts | What you do in them |
 |---|---|---|
@@ -252,9 +260,8 @@ Each Part names how you should drive Cortex Code:
 one of them has a failure mode that only surfaces four Parts later. Read the DDL before you approve
 it.
 
-This is a good place to use **Plan Mode** (`Shift+Tab` in Cortex Code). It makes Cortex Code lay out
-the whole sequence before it executes anything, so you can see the `USE SCHEMA` statements below in
-context.
+Use **Plan Mode** (`Shift+Tab`) here. Cortex Code lays out the whole sequence before executing, so you
+can see the `USE SCHEMA` statements below in context.
 
 **Prompt:**
 
@@ -334,9 +341,7 @@ If those three lines are missing, the connector found the objects already there.
 | **Snowpipe Streaming client** | **You do.** The SDK auto-creates the *pipe*, never the table. Creating it is step 2 of Snowflake's own streaming quickstart. |
 
 So a managed connector provisions its own destination; a streaming application does not. That decides
-who owns your schema. It is also why you wrote `STATION_TELEMETRY`'s DDL with no storage clauses while
-the connector states every property explicitly: the telemetry table is where inheritance is taught, so
-the connector's own DDL should be immune to the trap rather than demonstrating it.
+who owns your schema.
 
 **You start this once and leave it running for the rest of the lab.** You will never stop it, and you
 will never restart it. A streaming pipeline is something you turn on and operate, not something you
@@ -350,8 +355,7 @@ cycle every time conditions change.
 [cdc] inserts=62 updates=0 soft_deletes=1
 ```
 
-That log is the fastest answer to "is it working?", and in Part 5 it is where you will see the
-incident begin, several seconds before any query shows it.
+In Part 5 this log shows the incident several seconds before any query does.
 
 Two sources doing two different jobs:
 
@@ -416,10 +420,6 @@ Part 3 reads.
 **Approach: generate then confirm.** One predicate in here is the difference between a correct
 pipeline and a plausible-looking wrong one. Read for it.
 
-**Write the specification, not just the object name.** The two prompts in this Part state the grain and
-the logic, and leave the column names and the Iceberg settings to the lab's skill. That split is the
-part that transfers: on a stack with no lab skill, the specification is what you supply.
-
 **Prompt:**
 
 ```text
@@ -462,10 +462,9 @@ DEFECT_COUNTS_5MIN: a count per line, 5-minute bucket and defect code from
 INSPECTIONS_ACTIVE, with no-defect rows counted as NONE.
 ```
 
-`YIELD_BY_LINE_5MIN` is the join that pays for the second data source. One feed tells you *what*
-happened; a second feed joined on the same grain tells you *why*. Here: yield and booth humidity in the
-same row for the same 5-minute interval, which is what makes the agent's causal answer possible in
-Part 5.
+One feed tells you *what* happened; a second feed joined on the same grain tells you *why*. Here: yield
+and booth humidity in the same row for the same 5-minute interval, which makes the agent's causal answer
+possible in Part 5.
 
 `AVG_BOOTH_HUMIDITY` is empty for WELD and ASSEMBLY. That is correct; booth humidity is a paint-booth
 metric.
@@ -488,10 +487,7 @@ Show me the refresh history for these Dynamic Tables.
 recomputing only the 5-minute groups that changed, while the source underneath is being UPDATEd and
 DELETEd continuously by the connector's merges.
 
-**This beat is Snowflake's own `dynamic-tables` skill doing the work, not the lab's.** Refresh history,
-`refresh_mode_reason` and the rules for what keeps a query incremental are properties of the *query*, so
-they read the same whether the table is Iceberg or not. Name it directly if you want to see a bundled
-skill answer on its own:
+Snowflake ships its own Dynamic Tables skill. Ask it directly:
 
 **Prompt:**
 
@@ -499,9 +495,8 @@ skill answer on its own:
 $dynamic-tables Why is this refresh incremental, and what would break it?
 ```
 
-Two skills are in play by now and they cover different ground: the bundled one knows Dynamic Tables in
-general, and the lab's knows this pipeline's names and Iceberg settings. That is the same split you get
-on your own stack once you write one.
+**Checkpoint:** it names the operators that keep this query incremental, and the ones that would force a
+full refresh.
 
 ### Where am I?
 
@@ -554,9 +549,8 @@ interval it used. Keep this tab open; you need it in Part 5.
 **Approach: direct execution**, then read.
 
 This Part demonstrates the two hard properties of any change feed: a **cause arrives before its
-effect**, and a **correction arrives after the aggregate has already reported**. Handling both is what
-separates a CDC pipeline from an append-only one. Here: a paint booth drifts, and inspectors then
-overturn the frames it spoiled.
+effect**, and a **correction arrives after the aggregate has already reported**. Here: a paint booth
+drifts, and inspectors then overturn the frames it spoiled.
 
 The producer is still running from Part 2, and it stays running. What changes is the **plant**, not the
 pipeline. You write a row to a control table and the running simulator picks it up within about
@@ -593,13 +587,12 @@ Now watch the cascade arrive layer by layer, and time it:
 
 WELD and ASSEMBLY stay in the high 90s throughout. They are your control.
 
-Now the payoff. In the Snowsight agent tab, ask question 3:
+In the Snowsight agent tab, ask question 3:
 
 3. *Why did PAINT yield drop?*
 
 **Checkpoint:** the agent connects the humidity rise to the `PAINT_RUN` defects and gets the **order**
-right: humidity first, defects second. That answer is only possible because two sources were joined
-in Part 3. An agent on the CDC feed alone could tell you *what* happened and never *why*.
+right: humidity first, defects second.
 
 Then the recovery:
 
@@ -630,10 +623,9 @@ ignored the correction entirely.
 
 **Approach: run the script**, then read it.
 
-Everything you built is open Apache Iceberg. This Part proves it from outside Snowflake. PyIceberg
-reads the Gold Dynamic Table straight from object storage through the Horizon Catalog, using vended
-credentials, and **no Snowflake warehouse computes the scan**. The dependencies are already in your
-venv from Setup D.
+PyIceberg reads the Gold Dynamic Table straight from object storage through the Horizon Catalog, using
+vended credentials, and **no Snowflake warehouse computes the scan**. The dependencies are already in
+your venv from Setup D.
 
 ```bash
 .venv/bin/python external/read_iceberg.py
@@ -647,9 +639,8 @@ Snowflake.
 Horizon catalog access is billed as external-engine access, including when the reader is another
 Snowflake account. Budget for it the way you would budget for any engine reading your lakehouse.
 
-This Part ships pre-written rather than prompted. The auth path has two steps that are not in the
-PyIceberg docs, so read the script: it is 100 lines and the comments explain both. If you would rather
-be walked through it, name its skill directly. This is the second and last place the lab uses `$`:
+The auth path has two steps that are not in the PyIceberg docs, so read the script: it is 100 lines and
+the comments explain both. To be walked through it instead:
 
 **Prompt:**
 
@@ -661,12 +652,11 @@ $iceberg-external-read Walk me through reading the Gold table.
 
 # Optional acts
 
-Core lab done. Both of these stand alone. Do either, both, or neither.
+Both stand alone. Do either, both, or neither.
 
 ## Optional A — Look inside the connector
 
-Two beats on how the connector records itself. Neither is needed to build anything, and both are how
-you would audit a real Openflow deployment.
+Both prompts show how you would audit a real Openflow deployment.
 
 **Prompt:**
 
@@ -786,25 +776,13 @@ this folder. There is nothing to install, and nothing to type.
 | `streaming-cdc-iceberg-lab` | The object model, the measured Iceberg constraints, every checkpoint, and the rules for building each layer. It pins the conventions, so your prompts can state intent instead of restating them. |
 | `iceberg-external-read` | Part 6 only: the Horizon catalog auth path and its two traps. Separate because it is a standalone activity that nothing else depends on. |
 
-Snowflake also ships its own skills, and they load alongside these. Part 3 uses the bundled
-`dynamic-tables` skill for the refresh-history beat. Where the two overlap, the lab's skill wins on this
-pipeline's names and Iceberg settings, because those were measured on an account like yours.
-
 Neither keeps a copy of the DDL. Both point at `solutions/`, so there is only ever one version of any
 statement.
 
 A prompt like *"Run the preflight checks"* contains no object names, no schema, no Iceberg settings. It
-works because the skill already put all of that in context. Write one for your own stack and you stop
-re-explaining your conventions to an agent on every task.
+works because the skill already put all of that in context.
 
-Where you are **building** an object rather than inspecting one, put the specification in the prompt:
-state the grain and the logic, and let the skill supply the column names and the Iceberg settings. Part 3
-is where the lab does this. That is the division to carry to your own stack, where nothing pins your
-conventions until you write it.
-
-**Naming a skill with `$`.** Auto-loading is the mechanism here, so almost every prompt in this lab is
-plain English. But you can always name a skill explicitly, and the lab does it three times, in Setup C,
-Part 3 and Part 6, so you have seen the syntax:
+**Naming a skill with `$`.** You can name a skill explicitly:
 
 ```text
 $streaming-cdc-iceberg-lab <your request>
@@ -815,7 +793,7 @@ nothing breaks and the work still happens. It is also the lever for getting back
 ever produces the wrong object name or ignores a constraint, prefix your next one with
 `$streaming-cdc-iceberg-lab` to force the lab's own rules to the front.
 
-Open `SKILL.md` and read it.
+Read `SKILL.md` to see what a skill contains before you write one.
 
 # Cleanup
 
