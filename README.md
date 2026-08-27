@@ -39,8 +39,7 @@ somebody needs a metric sooner than they are getting it.
   `INCREMENTAL` while the tables underneath them are rewritten continuously.
 - **A late-arriving correction restates an aggregate that already reported.** One wrong predicate
   silently corrupts a metric for ever; the right one lets history be revised. An append-only pipeline
-  cannot do this. Here: yield rises for a 5-minute bucket that had already closed — and
-  [Optional C](#optional-c--price-the-predicate) puts a number on what the wrong predicate would cost.
+  cannot do this. Here: yield rises for a 5-minute bucket that had already closed.
 - **A [semantic view](https://docs.snowflake.com/en/user-guide/views-semantic/overview) makes a table
   answerable in plain language, and a second source makes the answer causal.** One feed tells you *what*
   happened, never *why*. Here: the agent ties a sensor drift to a defect spike and gets the order right.
