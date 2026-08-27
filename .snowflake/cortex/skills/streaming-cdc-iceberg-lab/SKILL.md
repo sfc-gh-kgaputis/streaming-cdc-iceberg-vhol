@@ -63,7 +63,7 @@ to be aware of, so you do not follow their guidance into a failure:
 
 There is nothing for the attendee to **install** — every skill they need is already
 present, here or bundled with Cortex Code. One deliberate exception to "do not point at
-another skill": Part 3's refresh-history beat invites `$dynamic-tables`, because refresh
+another skill": Part 3's refresh-history beat invites the bundled `dynamic-tables` skill, because refresh
 behaviour genuinely is the bundled skill's domain and seeing it answer is one of the lab's
 learning outcomes. Everything about *this pipeline* stays here or in `solutions/`.
 
@@ -127,13 +127,19 @@ Consequences of landing on v2, all of which surface far from the cause:
 `VARIANT` columns are rejected outright, and `TIME_SLICE()`'s `TIMESTAMP_NTZ(9)` is
 rejected.
 
-The Dynamic Table layer is **not** exposed to the session-schema trap — but it is
-wholly dependent on `MFG.ANALYTICS` carrying the version default, because
-**`CREATE DYNAMIC ICEBERG TABLE` has no `ICEBERG_VERSION` clause at all** and so has no
-per-statement override. Setting the three defaults on `MFG.ANALYTICS` is therefore not
-optional, even though no plain Iceberg table is ever created there. Keep the
+The Dynamic Table layer is **not** exposed to the session-schema trap: a
+`CREATE DYNAMIC ICEBERG TABLE` takes its version from the **target** schema. So
+`MFG.ANALYTICS` must carry the version default, and setting the three defaults there is
+not optional even though no plain Iceberg table is ever created in that schema. Keep the
 `USE SCHEMA` before Dynamic Table creates anyway: it costs nothing, it matches the
 answer key, and it models the discipline the lab teaches.
+
+`CREATE DYNAMIC ICEBERG TABLE` **does** accept an `ICEBERG_VERSION` clause — it is in the
+documented syntax, and it was measured accepted and effective on 26 Aug 2026 (a DT created
+in a schema defaulting to 2, with `ICEBERG_VERSION = 3`, came out v3 and `INCREMENTAL`).
+The lab does not use it, because the schema default is what the preflight proves and what
+Part 1 teaches. If an attendee or another skill proposes it, it is not wrong — say the lab
+relies on the schema default instead, and do not claim the clause does not exist.
 
 A table that came out v2 must be recreated for the purposes of this lab. (`ALTER ICEBERG
 TABLE … UPGRADE TO ICEBERG VERSION 3` does exist and was measured working on an empty
@@ -254,8 +260,9 @@ The journal carries an explicit `ICEBERG_VERSION = 3` because `SF_METADATA VARIA
 fails outright on v2, and `ERROR_LOGGING = TRUE` as the connector sets.
 
 **Attendees INSPECT the journal; they never build Dynamic Tables on it.** It is
-connector-internal, its schema shifts with the generation counter, and the connector
-prunes it. Build on `QUALITY_INSPECTIONS`.
+connector-internal, its name shifts with the generation counter when the source schema
+changes, and the connector never drops it — journals are retained indefinitely and pruning
+them is the operator's job. Build on `QUALITY_INSPECTIONS`.
 
 **`SF_METADATA` holds a JSON *string*, not a parsed object** — the connector writes it
 that way. `SF_METADATA:offset_token` returns NULL; use
@@ -323,7 +330,7 @@ is nothing that can drift out of sync. Read the file, then:
 | # | Constraint |
 |---|---|
 | 0 | **`ICEBERG_VERSION_DEFAULT` resolves from the session's current schema for `CREATE ICEBERG TABLE`, but from the target schema for `CREATE DYNAMIC ICEBERG TABLE`.** `EXTERNAL_VOLUME` and `CATALOG` always use the target schema. Always `USE SCHEMA` first. `SHOW PARAMETERS` is not a valid check — only a created table's `iceberg_table_format_version` is. |
-| 1 | `TIME_SLICE()` returns `TIMESTAMP_NTZ(9)`, rejected by Iceberg **v2**, accepted on v3. Keep the `::TIMESTAMP_NTZ(6)` cast anyway — it is free insurance if the version default did not take. |
+| 1 | `TIME_SLICE()` returns the **same type as its input**, so on `QUALITY_INSPECTIONS.EVENT_TS` (a standard table, default `TIMESTAMP_NTZ(9)`) it yields scale 9, which Iceberg **v2** rejects and v3 accepts. On `STATION_TELEMETRY.EVENT_TS` (Iceberg, scale 6) the cast is a no-op. Keep the `::TIMESTAMP_NTZ(6)` cast everywhere anyway — it is free insurance if the version default did not take. |
 | 2 | **`MODE()` is a hard `CREATE` error** under change tracking: *"Change tracking is not supported on queries containing the function 'MODE'"*. Never put it in a Dynamic Table. Count at defect grain and rank at read time. |
 | 3 | `OBJECT` / `OBJECT_AGG` output is rejected by Iceberg on **v2 and v3 alike**. |
 | 4 | Bare `NUMBER` is rejected — use `NUMBER(38,0)`. |
@@ -380,8 +387,10 @@ step numbers here, when you talk to them.
 
 1. **Environment + tables — Part 1** — create `MFG`, schemas `RAW` and `ANALYTICS`, the
    database-level version default, **the three Iceberg defaults on both schemas**, `HOL_WH`,
-   then exactly two tables: `STATION_TELEMETRY` and `SIMULATOR_CONTROL`. `USE SCHEMA`
-   before the Iceberg create. Then run the preflight (Checkpoint P).
+   `ALTER USER HOL_USER SET DEFAULT_WAREHOUSE = HOL_WH` (an agent caller needs a default
+   warehouse as well as a default role), then exactly two tables: `STATION_TELEMETRY` and
+   `SIMULATOR_CONTROL`. `USE SCHEMA` before the Iceberg create. Then run the preflight
+   (Checkpoint P).
 
    **Do NOT create `QUALITY_INSPECTIONS`, the journal, or the journal stream.** Those are
    the connector's own objects and it creates them itself on first run — see
@@ -396,10 +405,8 @@ step numbers here, when you talk to them.
    it is faithful, and `STATION_TELEMETRY` is the one table that *inherits* the Iceberg
    defaults, which is what the preflight proves.
 
-   `SIMULATOR_CONTROL` is the one that gets forgotten, because the attendee's prompt says
-   only "the environment and both landing tables". Create it anyway — Part 5 writes to it,
-   and without it the producer logs `[control] read failed` and Part 5 fails on a missing
-   table.
+   `SIMULATOR_CONTROL` is small but load-bearing: Part 5 writes to it, and without it the
+   producer logs `[control] read failed` and Part 5 fails on a missing table.
 
 2. **(nothing here — the connector provisions its own CDC objects in step 3)**
 
@@ -414,7 +421,8 @@ step numbers here, when you talk to them.
    and above all the **merge gate**: the journal always leads the destination, and each
    MERGE fires at second :00 of a minute and finishes in a second or two. Close by telling
    the attendee to **build on `QUALITY_INSPECTIONS`, not on the journal** — the journal name
-   carries a generation counter and the connector prunes it. Checkpoint G-gate. Do not skip
+   carries a generation counter that changes with the source schema, and the connector never
+   cleans the journal up. Checkpoint G-gate. Do not skip
    this step.
 
    `SF_METADATA`'s `PARSE_JSON` behaviour and the `QUERY_TAG` audit are **no longer core**
@@ -477,6 +485,16 @@ step numbers here, when you talk to them.
     Setup D. The satellite skill `iceberg-external-read` owns this Part, including the two
     auth traps and the failure modes — defer to it rather than restating them. Checkpoint E.
 
+11. **Cleanup** — when asked to clean up, stop the spend, or run the cleanup script: run
+    **Block 1** of `solutions/09_cleanup.sql` (suspend the four Dynamic Tables, suspend
+    `HOL_WH`) and report `scheduling_state`. Tell the attendee to stop the producer first,
+    and stop it yourself if you started it — that is what actually stops the spend, because
+    an idle pipeline does not wake the warehouse. Run **Block 2** (drop everything) only if
+    they explicitly ask to remove everything, and only once the producer is stopped:
+    dropping the journal under an open channel produces errors that look like a lab failure.
+    Never run the commented Block 3 — it is Snowsight-only and drops the user you are
+    connected as.
+
 ## Checkpoints
 
 - **P (preflight):** `aws_ok`, `cortex_ok`, `raw_iceberg_ok` and `analytics_iceberg_ok` must
@@ -515,8 +533,9 @@ step numbers here, when you talk to them.
   `refresh_mode_reason`.
 - **Y (gold):** yield by line for recent buckets. Three lines, each around 95–99% in
   steady state, with `HUMIDITY` populated for PAINT only.
-- **X (incident):** PAINT `FIRST_PASS_YIELD_PCT` drops into the **80s** while WELD and
-  ASSEMBLY stay in the high 90s, `AVG_BOOTH_HUMIDITY` for PAINT climbs from ~44 into
+- **X (incident):** PAINT `FIRST_PASS_YIELD_PCT` drops into the **80s** on the first,
+  partly affected bucket and the **high 70s** on a fully affected one, while WELD and
+  ASSEMBLY stay around 96–97%, `AVG_BOOTH_HUMIDITY` for PAINT climbs from ~44 into
   the 60s–70s, and `PAINT_RUN` dominates the defect counts.
 - **R (recovery):** PAINT yield rises again and `COUNT_IF(_SNOWFLAKE_UPDATED_AT >
   _SNOWFLAKE_INSERTED_AT)` on `QUALITY_INSPECTIONS` climbs. The DTs stay INCREMENTAL.
@@ -572,15 +591,14 @@ the view rather than at the table that caused it.
 - Do not create any table before the storage defaults are set.
 - Do not proceed past Checkpoint P with any FALSE, or any object reporting v2.
   Recreate a v2 table rather than trying to upgrade it in place.
-- Confirm the journal and its stream exist before starting the producer in `journal`
-  mode — otherwise the events have nowhere to land.
+- Confirm `STATION_TELEMETRY` and `SIMULATOR_CONTROL` exist and the preflight passed before
+  starting the producer. Do **not** create `QUALITY_INSPECTIONS`, the journal or its stream —
+  the producer creates all three on start and logs `[connector] … ready` for each.
 - Never stop or restart the producer to change its behaviour. Write to
   `MFG.RAW.SIMULATOR_CONTROL` instead. Restarting teaches a false operational model and
   risks HTTP 409 from reopening a channel within ~30 s.
 - Never create a Snowflake task for the merge. The connector does not, and doing so
   would teach attendees something false about the product.
-- Confirm `QUALITY_INSPECTIONS` and `STATION_TELEMETRY` both exist before starting the
-  producer.
 - Run each layer's Checkpoint before moving to the next.
 
 ## References
@@ -605,7 +623,8 @@ request. They ship pre-written for stated reasons:
   PyIceberg and the Horizon Catalog. Part 6, and it has **its own skill**:
   `iceberg-external-read`, which carries the two auth traps and the failure modes. That
   skill loads on its own description, and the README also shows the attendee invoking it
-  explicitly as `$iceberg-external-read` — one of the lab's two demonstrations of calling
+  explicitly by name (`/` picker, or "use the iceberg-external-read skill") — one of the
+  lab's two demonstrations of calling
   a skill by name, the other being Setup C. Do not duplicate its content here.
 - **`dashboard/streamlit_app.py`** — the live plant-floor dashboard. **Presenter-only.**
   It is shared on screen during Part 5; it is not a lab step. If an attendee asks, they

@@ -9,7 +9,7 @@ and an **AI agent** explains what is happening on the plant floor. You build it 
 
 You leave with one open lakehouse: governed by Snowflake, readable by any engine that speaks Iceberg.
 
-![Two feeds land in Snowflake-managed Apache Iceberg v3 tables, both over Snowpipe Streaming. Station telemetry streams straight into the STATION_TELEMETRY Iceberg table. In parallel, a simulated Openflow Postgres CDC connector appends change events to the QUALITY_INSPECTIONS_JOURNAL Iceberg table, and an APPEND_ONLY stream on that journal feeds a MERGE the connector issues itself on a thirty-second gate, maintaining the QUALITY_INSPECTIONS destination table with soft deletes. Four Dynamic Iceberg Tables refine both feeds incrementally on a one-minute target lag: STATION_HEALTH rolls up telemetry and INSPECTIONS_ACTIVE filters soft-deleted rows, then YIELD_BY_LINE_5MIN joins those two on line and five-minute bucket while DEFECT_COUNTS_5MIN counts defects at their natural grain. The semantic view PLANT_FLOOR_SV sits over three tables — YIELD_BY_LINE_5MIN, DEFECT_COUNTS_5MIN and STATION_HEALTH, which reaches the view directly as well as through the join — and a Cortex Agent answers questions through that view. Outside Snowflake, PyIceberg on your laptop reads the same gold Iceberg tables through the Horizon Catalog with vended credentials, using no warehouse.](docs/architecture.svg)
+![Two feeds land in Snowflake-managed Apache Iceberg v3 tables, both over Snowpipe Streaming. Station telemetry streams straight into the STATION_TELEMETRY Iceberg table. In parallel, a simulated Openflow Postgres CDC connector appends change events to the QUALITY_INSPECTIONS_JOURNAL Iceberg table, and an APPEND_ONLY stream on that journal feeds a MERGE the connector issues itself on a one-minute gate, maintaining the QUALITY_INSPECTIONS destination table with soft deletes. Four Dynamic Iceberg Tables refine both feeds incrementally on a one-minute target lag: STATION_HEALTH rolls up telemetry and INSPECTIONS_ACTIVE filters soft-deleted rows, then YIELD_BY_LINE_5MIN joins those two on line and five-minute bucket while DEFECT_COUNTS_5MIN counts defects at their natural grain. The semantic view PLANT_FLOOR_SV sits over three tables — YIELD_BY_LINE_5MIN, DEFECT_COUNTS_5MIN and STATION_HEALTH, which reaches the view directly as well as through the join — and a Cortex Agent answers questions through that view. Outside Snowflake, PyIceberg on your laptop reads the same gold Iceberg tables through the Horizon Catalog with vended credentials, using no warehouse.](docs/architecture.svg)
 
 ## The scenario
 
@@ -75,14 +75,15 @@ Everything here is **pre-work**. Nothing installs during the session.
   CLI and not the Snowsight version: the CLI is not offered on standard trial accounts, and Snowsight
   has no local shell, so it cannot create a virtual environment or run the producer.
 - **Snowsight** in a browser tab, logged in to the same account. You will switch to it twice.
-- **Git** and **Python 3.9+** locally.
+- **Git** and **Python 3.10–3.13** locally. (3.14 works on macOS and Linux if you have a compiler;
+  PyIceberg has no 3.14 wheel yet and builds from source, which can fail on Windows.)
 
 ### Repo layout
 
 | | |
 |---|---|
 | `producer/` | The data producer. You start it once, in Part 2, and leave it running. `main.py` is the file you invoke; `cdc_simulator.py` is the simulated connector, and is worth reading. |
-| `solutions/` | The fast path: finished SQL for every Part, numbered to match, safe to run at any time. Plus `progress.sql` ("where am I?") and `09_cleanup.sql`. |
+| `solutions/` | The fast path: finished SQL for every Part, numbered to match. Safe to run at any time before Part 2; once the producer is streaming, run only the file for the Part you are on. Plus `progress.sql` ("where am I?") and `09_cleanup.sql`. |
 | `external/` | Part 6: read your Iceberg tables from your laptop with PyIceberg. |
 | `docs/` | [Troubleshooting](docs/troubleshooting.md), [CDC internals](docs/cdc-internals.md), [producer reference](docs/producer.md), the architecture diagram, and the three agent questions. |
 | `dashboard/` | The live dashboard the presenter shares on screen. Not a lab step. |
@@ -93,7 +94,7 @@ Everything here is **pre-work**. Nothing installs during the session.
 | | |
 |---|---|
 | [Setup A–D](#setup--do-this-before-the-session) | Pre-work: repo, account bootstrap, connection, local environment |
-| [Part 1](#part-1--land-both-feeds-in-iceberg) | Create the Iceberg targets and both landing tables |
+| [Part 1](#part-1--land-both-feeds-in-iceberg) | Create the Iceberg targets and the tables you own |
 | [Part 2](#part-2--watch-the-connectors-change-feed) | Start the producer; read the CDC journal and the merge gate |
 | [Part 3](#part-3--refine-it-with-dynamic-tables) | Four Dynamic Iceberg Tables over both feeds |
 | [Part 4](#part-4--ask-it-questions-in-english) | Semantic view, then a Cortex Agent over it |
@@ -117,6 +118,9 @@ Do these in order.
    git clone https://github.com/sfc-gh-kgaputis/streaming-cdc-iceberg-vhol.git
    cd streaming-cdc-iceberg-vhol
    ```
+
+   When Cortex Code asks whether you trust the folder, choose **Trust**. An untrusted folder runs in
+   restricted mode, and the two skills this lab ships do not load.
 
 ## B. Bootstrap the account (Snowsight)
 
@@ -147,7 +151,8 @@ Do these in order.
    GRANT DATABASE ROLE SNOWFLAKE.COPILOT_USER TO ROLE ACCOUNTADMIN;
 
    -- Attach a network policy before minting the token. A token only authenticates
-   -- if its user sits under one.
+   -- if its user sits under one. This one is wide open because the account is a
+   -- throwaway lab account; do not copy it into anything real.
    CREATE NETWORK POLICY IF NOT EXISTS HOL_NP ALLOWED_IP_LIST = ('0.0.0.0/0');
    ALTER USER HOL_USER SET NETWORK_POLICY = HOL_NP;
 
@@ -182,20 +187,21 @@ Do these in order.
 
 ## C. Connect Cortex Code Desktop as HOL_USER
 
-5. **Add the connection** using the `account_identifier` from step 4, user `HOL_USER`, and your token
-   from `secret.pat` as the credential. Role `ACCOUNTADMIN`.
+5. **Add the connection** using the `account_identifier` from step 4, user `HOL_USER`, authentication
+   **Password**, and the token from `secret.pat` pasted into the password field. Role `ACCOUNTADMIN`.
 
-6. **Confirm it.** This prompt is also the one place in setup that names a skill explicitly with `$`
-   (see [How the skills work](#how-the-skills-work)):
+6. **Confirm it.** This prompt also names a skill explicitly, which you can do by typing `/` and picking
+   it from the list, or by naming it in the sentence (see [How the skills work](#how-the-skills-work)):
 
    **Prompt:**
 
    ```text
-   $streaming-cdc-iceberg-lab Test my connection and confirm you loaded.
+   Use the streaming-cdc-iceberg-lab skill: test my connection and confirm you loaded.
    ```
 
    **Checkpoint:** user comes back as `HOL_USER`, role `ACCOUNTADMIN`, region starts with `AWS_`, and
-   Cortex Code names the `streaming-cdc-iceberg-lab` skill as active.
+   Cortex Code names the `streaming-cdc-iceberg-lab` skill as active. If it does not name the skill,
+   close the folder and reopen it, and choose **Trust**.
 
 ## D. Set up the local environment
 
@@ -215,7 +221,7 @@ Do these in order.
    touching Snowflake:
 
    ```bash
-   .venv/bin/python producer/main.py --dry-run --cdc --seed 42
+   .venv/bin/python producer/main.py --dry-run --cdc --seed 42 --duration 3
    .venv/bin/python -c "import pyiceberg, snowflake.connector; print('deps ok')"
    ```
 
@@ -243,12 +249,13 @@ one of them has a failure mode that only surfaces four Parts later. Read the DDL
 it.
 
 Use **Plan Mode** (`Shift+Tab`) here. Cortex Code lays out the whole sequence before executing, so you
-can see the `USE SCHEMA` statements below in context.
+can see the `USE SCHEMA` statements below in context. Read the plan, then click **Build**
+(`Cmd+Shift+B`) to run it — in Plan Mode nothing executes until you do.
 
 **Prompt:**
 
 ```text
-Create the lab environment and both landing tables.
+Create the lab environment, the telemetry landing table, and the simulator control table.
 ```
 
 Two schemas, so provenance reads off any fully-qualified name: `RAW` arrived from outside, `ANALYTICS`
@@ -263,8 +270,7 @@ was computed for you.
 
 1. Set all three defaults — `EXTERNAL_VOLUME`, `CATALOG` and `ICEBERG_VERSION_DEFAULT = 3` — on
    **`MFG.RAW` and `MFG.ANALYTICS` both**. The Dynamic Tables you create in Part 3 land in
-   `MFG.ANALYTICS` and take their format version from that schema, with no version clause to override
-   it.
+   `MFG.ANALYTICS` and take their format version from that schema.
 2. Issue a **`USE SCHEMA` before each `CREATE ICEBERG TABLE`**, matching the schema you are creating
    into. Watch for one above the telemetry table.
 
@@ -275,12 +281,9 @@ below does that for every object. If something lands on v2, recreate it.
 The telemetry table's DDL contains no `CATALOG`, no `EXTERNAL_VOLUME` and no version. It inherits all
 three from the schema.
 
-**Checkpoint:** `SHOW ICEBERG TABLES IN DATABASE MFG` lists `STATION_TELEMETRY`, and
-`SHOW TABLES LIKE 'QUALITY_INSPECTIONS' IN SCHEMA MFG.RAW` lists a table that is **not** Iceberg. That
-asymmetry is deliberate: the CDC destination is a standard table because it is rewritten constantly.
-
-You created **one** data table. The connector creates three more for itself when you start it in Part 2:
-the CDC destination, the change journal and its stream.
+**Checkpoint:** `SHOW ICEBERG TABLES IN DATABASE MFG` lists exactly one table, `STATION_TELEMETRY`, and
+`SHOW TABLES IN SCHEMA MFG.RAW` lists `SIMULATOR_CONTROL` beside it. No `QUALITY_INSPECTIONS` yet: the
+connector creates that table, the change journal and the journal's stream when you start it in Part 2.
 
 Now verify everything, before building anything on top:
 
@@ -290,8 +293,8 @@ Now verify everything, before building anything on top:
 Run the preflight checks.
 ```
 
-**Checkpoint:** `aws_ok`, `cortex_ok`, `raw_iceberg_ok` and `analytics_iceberg_ok` all come back TRUE, every
-Iceberg object reports `is_v3 = TRUE`, and the stream reports `mode = APPEND_ONLY`.
+**Checkpoint:** `aws_ok`, `cortex_ok`, `raw_iceberg_ok` and `analytics_iceberg_ok` all come back TRUE, and every
+Iceberg object reports `is_v3 = TRUE`.
 **Do not continue past a FALSE.** See [Troubleshooting](docs/troubleshooting.md). A wrong answer here gets
 more expensive with every Part, so fix it now rather than after the next one.
 
@@ -314,14 +317,19 @@ targets and says so:
 [connector] journal stream ready
 ```
 
-If those three lines are missing, the connector found the objects already there. A managed connector
-provisions its own destination tables; a streaming client does not, which is why you wrote
+Those three lines print whether the connector created the objects or found them already there. A managed
+connector provisions its own destination tables; a streaming client does not, which is why you wrote
 `STATION_TELEMETRY` yourself and not these three.
+
+The destination table it just built is a **standard** table, not Iceberg, while its journal is Iceberg v3.
+That is the connector's default — it writes standard destinations unless you opt into an Iceberg
+destination format — and this lab keeps the default so you can watch a table being rewritten in place.
+Everything downstream of it is Iceberg.
 
 **Start it once and leave it running for the rest of the lab.** You never stop or restart it; Part 5
 changes the data at the source instead.
 
-**Keep its output visible.** It reports the plant floor once a second:
+**Keep its output visible.** It reports the plant floor every 15 seconds, and every merge as it fires:
 
 ```
 [telem] rows=1860 booth_humidity~44.0
@@ -371,7 +379,9 @@ backlog. Each merge starts at second **:00** of a minute and finishes in a secon
 latency here is a schedule you chose, not a throughput limit.
 
 **Build on the destination table, `QUALITY_INSPECTIONS`, never on the journal.** The journal is
-connector-internal and the connector prunes it. Part 3 reads `QUALITY_INSPECTIONS`.
+connector-internal: its name carries a registration timestamp and a generation counter that changes
+when the source schema changes, and the connector never cleans it up — that part is yours. Part 3 reads
+`QUALITY_INSPECTIONS`.
 
 ## Part 3 — Refine it with Dynamic Tables
 
@@ -426,7 +436,7 @@ agent's causal answer possible in Part 5.
 `AVG_BOOTH_HUMIDITY` is empty for WELD and ASSEMBLY. That is correct; booth humidity is a paint-booth
 metric.
 
-**In steady state:** each line sits around **96–100%** first-pass yield, with a handful of scrap units
+**In steady state:** each line sits around **95–99%** first-pass yield, with a handful of scrap units
 per bucket. `AVG_BOOTH_HUMIDITY` reads about **44** for PAINT and is empty for WELD and ASSEMBLY.
 Single-digit row counts are correct: three lines times the number of elapsed 5-minute buckets.
 
@@ -461,11 +471,14 @@ Snowflake ships its own Dynamic Tables skill. Ask it directly:
 **Prompt:**
 
 ```text
-$dynamic-tables Why is this refresh incremental, and what would break it?
+Use the dynamic-tables skill: why is this refresh incremental, and what would break it?
 ```
 
 **Checkpoint:** it names the operators that keep this query incremental, and the ones that would force a
 full refresh.
+
+It may suggest changing the refresh mode or the target lag — `ADAPTIVE`, `AUTO` or `DOWNSTREAM`. Do not:
+this lab pins `INCREMENTAL` and a 1-minute lag on every layer, and the checkpoint above expects them.
 
 ### Where am I?
 
@@ -551,9 +564,9 @@ Now watch the cascade arrive layer by layer, and time it:
 |---|---|---|
 | Booth humidity climbs ~44 → ~70 | `STATION_HEALTH` | ~30–60 s |
 | PAINT defects spike, `PAINT_RUN` dominates | `DEFECT_COUNTS_5MIN` | ~90 s later |
-| PAINT yield falls into the **80s** | `YIELD_BY_LINE_5MIN` | ~1–2 min after that |
+| PAINT yield falls into the **80s**, then the high 70s | `YIELD_BY_LINE_5MIN` | ~1–2 min after that |
 
-WELD and ASSEMBLY stay in the high 90s throughout. They are your control.
+WELD and ASSEMBLY stay around 96–97% throughout. They are your control.
 
 In the Snowsight agent tab, ask question 3:
 
@@ -610,7 +623,7 @@ the comments explain both. To be walked through it instead:
 **Prompt:**
 
 ```text
-$iceberg-external-read Walk me through reading the Gold table.
+Use the iceberg-external-read skill: walk me through reading the Gold table.
 ```
 
 ---
@@ -675,34 +688,40 @@ this folder. There is nothing to install, and nothing to type.
 A prompt like *"Run the preflight checks"* contains no object names, no schema, no Iceberg settings. It
 works because the skill already put all of that in context.
 
-**Naming a skill with `$`.** You can name a skill explicitly:
+**Naming a skill explicitly.** Type `/` in the chat input and pick it from the list, or name it in the
+sentence:
 
 ```text
-$streaming-cdc-iceberg-lab <your request>
+Use the streaming-cdc-iceberg-lab skill: <your request>
 ```
 
 You never have to: both auto-load. It is the lever for getting back on track — if a prompt produces the
-wrong object name or ignores a constraint, prefix the next one with `$streaming-cdc-iceberg-lab`.
+wrong object name or ignores a constraint, name the skill in the next one. (In the Cortex Code CLI the
+same thing is written `$streaming-cdc-iceberg-lab`.)
 
 Read `SKILL.md` to see what a skill contains before you write one.
 
 # Cleanup
 
-**Do not skip this.** The Dynamic Tables refresh every minute for as long as they exist, and will
-quietly consume trial credits for days.
+**Stop the producer first** — `Ctrl-C` in the terminal it is running in, or ask Cortex Code to stop it if
+it started it for you. That is the one that matters: while the producer runs, the warehouse never
+suspends, a MERGE fires every minute and four Dynamic Tables keep refreshing. With it stopped there are
+no upstream changes, so the Dynamic Tables stop waking the warehouse.
+
+Then suspend the rest:
 
 **Prompt:**
 
 ```text
-Run the cleanup script.
+Stop the spend: suspend the four Dynamic Tables and the warehouse, and keep my data.
 ```
 
 **Checkpoint:** `SHOW DYNAMIC TABLES IN SCHEMA MFG.ANALYTICS` reports `scheduling_state = SUSPENDED` for all
 four, or returns nothing at all if you removed them.
 
-Or run [`solutions/09_cleanup.sql`](solutions/09_cleanup.sql) yourself. Block 1 stops the spend and
-keeps your data; Block 2 removes everything. Then stop the producer and delete your local `secret.pat`
-and `producer/profile.json`.
+Or run [`solutions/09_cleanup.sql`](solutions/09_cleanup.sql) yourself: Block 1 stops the spend and
+keeps your data, Block 2 removes everything. Then delete your local `secret.pat` and
+`producer/profile.json`.
 
 # License
 

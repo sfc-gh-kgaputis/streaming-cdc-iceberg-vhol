@@ -33,8 +33,10 @@ that does not exclude it answers "the top defect is NONE".
 
 > Why did PAINT yield drop?
 
-Ask this **during Part 5**, after the incident has propagated — roughly 3–4 minutes after you set the
-simulator control mode to `INCIDENT`. The producer keeps running throughout; you never restart it.
+Ask this **during Part 5**, after the incident has propagated — roughly 5–7 minutes after you set the
+simulator control mode to `INCIDENT`. The defect spike reaches `DEFECT_COUNTS_5MIN` sooner than that, but
+yield needs enough of a 5-minute bucket to be affected before the drop is unmistakable. The producer keeps
+running throughout; you never restart it.
 
 **Expect:** the agent connects the **booth humidity rise** to the `PAINT_RUN` defects, and gets the
 **order** right: humidity climbed first, defects followed. It should also note that WELD and ASSEMBLY

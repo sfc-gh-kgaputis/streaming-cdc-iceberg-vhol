@@ -8,8 +8,8 @@
 --
 --   1. Set EXTERNAL_VOLUME, CATALOG and ICEBERG_VERSION_DEFAULT = 3 on
 --      MFG.RAW *and* MFG.ANALYTICS, before creating any table. A
---      CREATE DYNAMIC ICEBERG TABLE has no version clause, so MFG.ANALYTICS's
---      default decides the Gold layer's format version.
+--      CREATE DYNAMIC ICEBERG TABLE takes its version from the TARGET schema,
+--      so MFG.ANALYTICS's default decides the Gold layer's format version.
 --
 --   2. Issue USE SCHEMA immediately before every plain Iceberg CREATE. For
 --      that form the version resolves from the session's schema, not the
@@ -47,6 +47,11 @@ CREATE WAREHOUSE IF NOT EXISTS HOL_WH
   AUTO_SUSPEND = 60
   AUTO_RESUME = TRUE
   INITIALLY_SUSPENDED = TRUE;
+
+-- A Cortex Agent caller needs a default warehouse as well as a default role --
+-- the agent resolves both from the user, not from the session. Set it now that
+-- HOL_WH exists. Whoever chats with the agent in Snowsight needs the same thing.
+ALTER USER HOL_USER SET DEFAULT_WAREHOUSE = HOL_WH;
 
 USE WAREHOUSE HOL_WH;
 USE SCHEMA MFG.RAW;

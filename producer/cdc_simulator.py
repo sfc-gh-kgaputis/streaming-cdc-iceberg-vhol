@@ -58,7 +58,7 @@ DEFECTS_BY_LINE = {
 
 # Healthy fraction of scans that FAIL, per line. Kept high enough that scrap is
 # visible in a 5-minute bucket -- at 1% you cannot see the incident against the noise.
-BASE_DEFECT_RATE = {"WELD": 0.040, "PAINT": 0.060, "ASSEMBLY": 0.035}
+BASE_DEFECT_RATE = {"WELD": 0.040, "PAINT": 0.040, "ASSEMBLY": 0.035}
 
 # During --incident, PAINT degrades to this. The cascade the agent must explain.
 INCIDENT_DEFECT_RATE = {"PAINT": 0.260}

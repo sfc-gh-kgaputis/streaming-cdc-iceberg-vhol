@@ -89,5 +89,8 @@ not one long-running one.
 
 ## The journal is connector-internal
 
-Its name carries a generation counter (`QUALITY_INSPECTIONS_JOURNAL_1787700000_1`) and the connector
-prunes it on its own retention schedule. Build on the destination table, never on the journal.
+Its name carries a registration timestamp and a generation counter
+(`QUALITY_INSPECTIONS_JOURNAL_1787700000_1`); the counter changes when the source schema changes, so the
+name you query today is not guaranteed to be the name tomorrow. The connector never drops journal
+tables — they are retained indefinitely, and pruning them is your job, not its. Build on the destination
+table, never on the journal.

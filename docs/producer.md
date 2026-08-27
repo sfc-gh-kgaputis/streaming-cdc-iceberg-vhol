@@ -13,8 +13,8 @@ Part 5's incident and recovery are triggered by writing to `MFG.RAW.SIMULATOR_CO
 streaming.
 
 ```bash
-# see what it generates, no Snowflake account needed
-.venv/bin/python producer/main.py --dry-run --cdc --seed 42
+# see what it generates, no Snowflake account needed (omit --duration to run until Ctrl-C)
+.venv/bin/python producer/main.py --dry-run --cdc --seed 42 --duration 3
 ```
 
 `--incident` and `--reinspect` also exist as startup flags, and `--no-control` ignores the control table

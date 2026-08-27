@@ -49,9 +49,8 @@ DROP TABLE MFG.RAW._PREFLIGHT;
 -- 4. Same again in MFG.ANALYTICS. This is the one people skip, because you
 --    create no plain Iceberg table there -- but every Dynamic Table you are about
 --    to build in it is a Dynamic ICEBERG Table, and those take their format
---    version from the TARGET schema. CREATE DYNAMIC ICEBERG TABLE has no
---    ICEBERG_VERSION clause to override with, so this schema's default is the
---    ONLY thing deciding whether the Gold layer is v3. If this check is FALSE,
+--    version from the TARGET schema. This schema's default is what decides
+--    whether the Gold layer is v3. If this check is FALSE,
 --    the whole Gold layer lands on v2 in Part 3 and TIME_SLICE()'s
 --    TIMESTAMP_NTZ(9) is rejected with no hint of the cause.
 USE SCHEMA MFG.ANALYTICS;

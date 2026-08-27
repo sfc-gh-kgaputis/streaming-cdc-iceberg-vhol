@@ -60,6 +60,7 @@ Back to the walkthrough: [README](../README.md).
 | Symptom | Cause | Fix |
 |---|---|---|
 | Agent: `internal error (request_id: …)`, code 391920 | The Analyst tool has no `execution_environment`, so its generated SQL has no warehouse to run in | Add `"execution_environment": { "type": "warehouse", "warehouse": "HOL_WH" }` to the `tool_resources` entry and re-run `CREATE OR REPLACE AGENT`. |
+| Agent errors before it answers anything, and `execution_environment` is present | The user calling the agent has no default warehouse. An agent resolves the default role *and* the default warehouse from the user, not from the session | `ALTER USER <you> SET DEFAULT_WAREHOUSE = HOL_WH;` — including the Snowsight user you are chatting as, which on a trial is the signup admin. |
 | `CREATE AGENT` fails on `unexpected '$spec'` | The specification was dollar-quoted with a named tag | Use bare `$$`. The spec JSON never contains `$$` itself, so it is safe. |
 | Agent: *"not an allowed model for Agent"* | A specific orchestration model was pinned | Use `"orchestration": "auto"`. Agent orchestration has a narrower allowed-models list than Cortex `COMPLETE`. Pin a model later in Snowsight under **Configuration → Model** if you want one. |
 | Agent errors or lists no models | Cross-region inference disabled | See `cortex_ok` above. |

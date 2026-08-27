@@ -13,8 +13,8 @@ hands-on lab. Setup, the walkthrough, and troubleshooting are in
   explain something, name the capability first and the plant second.
 - You build the pipeline by **prompting Cortex Code**, not by writing SQL yourself.
   Two skills in `.snowflake/cortex/skills/` load automatically when you open this
-  folder. Nothing to install. You can name either explicitly with `$`, but you
-  never have to.
+  folder (in a **trusted** folder — choose Trust when asked). Nothing to install. You can
+  name either explicitly by typing `/` and picking it, but you never have to.
 - **Use the object names the skill gives you.** Later parts and every checkpoint
   query depend on them.
 - `solutions/` is the answer key, one file per part. Read it whenever you want — it
@@ -28,10 +28,18 @@ hands-on lab. Setup, the walkthrough, and troubleshooting are in
 
 1. **The three schema defaults.** Set `EXTERNAL_VOLUME`, `CATALOG` and
    `ICEBERG_VERSION_DEFAULT = 3` on `MFG.RAW` and `MFG.ANALYTICS` both, *before* any
-   table is created. `CREATE DYNAMIC ICEBERG TABLE` has no version clause and can
-   only inherit them.
+   table is created. A `CREATE DYNAMIC ICEBERG TABLE` takes its Iceberg version from the
+   schema it is created in, so `MFG.ANALYTICS` must carry the default.
 2. **`CORTEX_ENABLED_CROSS_REGION`.** Set it to `ANY_REGION`, which
-   `solutions/00_bootstrap.sql` does. A fresh account defaults to `DISABLED`, which
-   degrades the agent in Part 4.
+   `solutions/00_bootstrap.sql` does. Without it the agent in Part 4 is degraded or lists
+   no models.
 
 `solutions/02_preflight.sql` checks both. Run it before building anything on top.
+
+## Two operating rules
+
+- **The producer starts once, in Part 2, and is never restarted.** Part 5 changes the plant
+  by writing `INCIDENT` or `REINSPECT` to `MFG.RAW.SIMULATOR_CONTROL`. Never create a
+  Snowflake task for the CDC merge — the connector issues it itself.
+- **"Clean up" means Block 1 of `solutions/09_cleanup.sql`** (suspend, keep the data) unless
+  you are explicitly asked to remove everything. Stop the producer first.

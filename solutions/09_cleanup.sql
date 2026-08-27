@@ -1,10 +1,11 @@
 -- =====================================================================
 -- 09_cleanup.sql   RUN THIS WHEN YOU ARE DONE
 -- =====================================================================
--- Not optional housekeeping. The Dynamic Tables in this lab refresh on a
--- 1-minute target lag, which keeps a warehouse waking up every minute for as
--- long as they exist. Left running, they will quietly consume trial credits
--- for days after the session ends.
+-- Not optional housekeeping. STOP THE PRODUCER FIRST -- that is the one that
+-- matters. While it runs, a MERGE fires every minute, the warehouse never gets
+-- to suspend, and four Dynamic Tables keep refreshing. With the producer stopped
+-- there are no upstream changes, so the Dynamic Tables stop waking the warehouse;
+-- what remains is a change-detection check per minute against an idle pipeline.
 --
 -- Run BLOCK 1 to stop the spend. Run BLOCK 2 to remove everything.
 -- =====================================================================

@@ -135,12 +135,14 @@ LIMIT 5;
 -- 4. CONCURRENCY. The real merge processor runs up to 4 concurrent tasks with
 --    per-table mutual exclusion and async query submission with retries. The
 --    producer runs one merge at a time, serially.
--- 5. JOURNAL PRUNING, re-snapshot archive tables, and the TOAST / unchanged-value
---    placeholder handling for wide source rows.
+-- 5. JOURNAL CLEANUP. Neither the real connector nor this producer prunes the
+--    journal -- the real one retains journals indefinitely, and a real deployment
+--    needs an operator who cleans them up. Also absent: re-snapshot archive tables,
+--    and the TOAST / unchanged-value placeholder handling for wide source rows.
 -- 6. Real WAL LSNs. The producer uses a monotonic logical clock instead, which is
 --    all the ordering guarantee the MERGE actually requires.
 
 -- A trailing real statement, deliberately: Snowsight parses text after the last
 -- statement as a statement, so a file ENDING in comments throws
 -- "SQL compilation error: Empty SQL statement" when you run the whole thing.
-SELECT 'journal and stream created -- no task, by design' AS status;
+SELECT 'journal inspected -- the connector merges it, no task, by design' AS status;

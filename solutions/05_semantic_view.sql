@@ -124,7 +124,7 @@ ORDER BY 2 DESC;
 -- Q3  "Why did PAINT yield drop?"  <- needs both data sources at once.
 --     Yield and booth humidity in the same result set,
 --     bucket by bucket. During the incident you see humidity climb from ~44
---     into the 60s-70s while yield falls from ~99% to the mid 70s.
+--     into the 60s-70s while yield falls from ~97% to the mid-to-high 70s.
 SELECT * FROM SEMANTIC_VIEW(MFG.ANALYTICS.PLANT_FLOOR_SV
   DIMENSIONS yield.line, yield.bucket
   METRICS yield.avg_yield_pct, yield.avg_humidity
