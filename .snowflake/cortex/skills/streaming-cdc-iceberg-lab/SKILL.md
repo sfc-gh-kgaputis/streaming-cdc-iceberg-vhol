@@ -310,6 +310,15 @@ absolute path in each `PUT`, resolved for the attendee's OS. Do **not** add `RUN
 `COMPUTE_POOL`: this is a warehouse-runtime app, and a container runtime waits on a compute pool
 node before it serves.
 
+**Run all four statements every time, including when the app already exists.** A `STREAMLIT` serves an
+immutable version snapshot, not the stage: `DESCRIBE STREAMLIT` shows the app running from
+`snow://streamlit/.../versions/version$1/` while the stage is only its `source_location_uri`. So `PUT`
+on its own updates the source and changes nothing the app runs — no error, no warning, and the app
+keeps serving the old code. The `CREATE OR REPLACE` is what re-snapshots. If someone reports that an
+edit has not appeared, re-run the block rather than re-uploading, and confirm with
+`LIST 'snow://streamlit/MFG.ANALYTICS.PLANT_FLOOR_LIVE/versions/version$1/'` — the size and md5 there
+are what is actually being served.
+
 Run the column contract first. The app addresses `LINE`, `BUCKET`, `UNITS`, `SCRAP_UNITS`,
 `FIRST_PASS_YIELD_PCT` and `AVG_BOOTH_HUMIDITY` on `YIELD_BY_LINE_5MIN`, and `LINE`, `BUCKET`,
 `DEFECT_CODE` and `N` on `DEFECT_COUNTS_5MIN`. Then tell them to open it at **Snowsight →
