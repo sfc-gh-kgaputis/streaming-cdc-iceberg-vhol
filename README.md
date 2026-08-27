@@ -87,7 +87,7 @@ Everything here is **pre-work**. Nothing installs during the session.
 | `solutions/` | The fast path: finished SQL for every Part, numbered to match. Safe to run at any time before Part 2; once the producer is streaming, run only the file for the Part you are on. Plus `progress.sql` ("where am I?") and `09_cleanup.sql`. |
 | `external/` | Part 6: read your Iceberg tables from your laptop with PyIceberg. |
 | `docs/` | [Troubleshooting](docs/troubleshooting.md), [CDC internals](docs/cdc-internals.md), [producer reference](docs/producer.md), the architecture diagram, and the three agent questions. |
-| `dashboard/` | The live dashboard. Your presenter shares it on screen; deploying your own is an optional step in Part 5. |
+| `dashboard/` | The live dashboard you deploy in Part 5. |
 | `.snowflake/` | Two Cortex Code skills that load automatically. See [How the skills work](#how-the-skills-work). |
 
 ## Contents
@@ -99,9 +99,8 @@ Everything here is **pre-work**. Nothing installs during the session.
 | [Part 2](#part-2--watch-the-connectors-change-feed) | Start the producer; read the CDC journal and the merge gate |
 | [Part 3](#part-3--refine-it-with-dynamic-tables) | Four Dynamic Iceberg Tables over both feeds |
 | [Part 4](#part-4--ask-it-questions-in-english) | Semantic view, then a Cortex Agent over it |
-| [Part 5](#part-5--the-incident-and-the-recovery) | An incident, then a correction that rewrites history |
+| [Part 5](#part-5--put-it-on-a-screen-and-watch-it-break) | A live dashboard, an incident, then a correction that rewrites history |
 | [Part 6](#part-6--read-it-from-your-laptop) | Read the same tables with PyIceberg, no warehouse |
-| [Optional A](#optional-a--look-inside-the-connector) · [B](#optional-b--break-it-on-purpose) · [C](#optional-c--price-the-predicate) | Connector internals; a deliberate failure; the cost of one predicate |
 | [Troubleshooting](docs/troubleshooting.md) | Symptoms, causes and fixes, grouped by Part |
 | [Cleanup](#cleanup) | Stop the spend. Do not skip it. |
 
@@ -230,7 +229,7 @@ Do these in order.
 
 # Run the lab
 
-The six Parts map to three acts. Do the optional acts if you are ahead.
+The six Parts map to three acts.
 
 | Act | Parts | What you do in them |
 |---|---|---|
@@ -529,17 +528,12 @@ detail page. You do not need to Publish. Ask the first two questions from
 **Checkpoint:** the numbers match what the semantic view returned, and the agent names the 5-minute
 interval it used. Keep this tab open; you need it in Part 5.
 
-## Part 5 — The incident, and the recovery
+## Part 5 — Put it on a screen, and watch it break
 
 **Approach: direct execution**, then read.
 
-Any change feed has two hard properties: a **cause arrives before its effect**, and a **correction
-arrives after the aggregate has already reported**. Here a paint booth drifts, then inspectors overturn
-the frames it spoiled.
-
-**Optional — put it on a screen.** Your presenter is already sharing this dashboard, so you can just
-watch. To run your own, deploy the app that ships in `dashboard/`. Do it **now**, not later: the next
-few minutes are the ones worth watching on a chart.
+Deploy the app that ships in `dashboard/`. Do it before you cause the incident below: the chart is what
+you will watch the incident on, and it plots humidity and yield on one time axis.
 
 **Prompt:**
 
@@ -554,11 +548,9 @@ every 30 seconds; **Auto-refresh** turns that off and **Refresh now** re-queries
 humidity dashed on the right. An empty defect panel is correct at this point — nothing has failed in
 the last 15 minutes yet.
 
-Skip this if you are behind. The rest of the Part reads the same tables in SQL.
-
-The producer is still running from Part 2, and it stays running. What changes is the **plant**, not the
-pipeline. You write a row to a control table and the running simulator picks it up within about
-ten seconds:
+Now cause an incident. The producer is still running from Part 2, and it stays running. What changes is
+the **plant**, not the pipeline. You write a row to a control table and the running simulator picks it up
+within about ten seconds:
 
 **Prompt:**
 
@@ -577,10 +569,16 @@ INSERT INTO MFG.RAW.SIMULATOR_CONTROL (MODE, UPDATED_AT)
 (`47.7`, `52.2`, `56.7`), and about 90 seconds later `[cdc] PAINT defect rate -> 26%`. Cause precedes
 effect, visible before any query.
 
+### While the cascade lands
+
+Any change feed has two hard properties: a **cause arrives before its effect**, and a **correction
+arrives after the aggregate has already reported**. Here a paint booth drifts, then inspectors overturn
+the frames it spoiled. You are watching the first of those two now; the second is the correction below.
+
 A real Openflow connector runs continuously: nobody restarts it because a booth misbehaved. The data
 changes character at the source and the pipeline carries it through untouched.
 
-Now watch the cascade arrive layer by layer, and time it:
+Time the cascade as it arrives layer by layer:
 
 | What | Where it shows up | When |
 |---|---|---|
@@ -599,7 +597,7 @@ In the Snowsight agent tab, ask question 3:
 **Checkpoint:** the agent connects the humidity rise to the `PAINT_RUN` defects and gets the **order**
 right: humidity first, defects second.
 
-Then the recovery:
+### The correction
 
 **Prompt:**
 
@@ -651,70 +649,6 @@ Use the iceberg-external-read skill: walk me through reading the Gold table.
 ```
 
 ---
-
-# Optional acts
-
-Each stands alone. Do any, all, or none.
-
-## Optional A — Look inside the connector
-
-Both prompts show how you would audit a real Openflow deployment. The mechanics are in
-[How the CDC connector works](docs/cdc-internals.md).
-
-**Prompt:**
-
-```text
-Show me SF_METADATA, what type it really is, and pull the offset token out of it.
-```
-
-`SF_METADATA` is a `VARIANT` holding a JSON **string**. Parse it before you subscript it.
-
-**Checkpoint:** `SF_METADATA:offset_token` returns `NULL` and `TYPEOF(SF_METADATA)` says `VARCHAR`,
-while `PARSE_JSON(SF_METADATA::STRING):offset_token` returns an actual offset.
-
-**Prompt:**
-
-```text
-Find the connector's merges in query history using its query tag.
-```
-
-Every merge carries a `QUERY_TAG` naming the application, operation and merge strategy. Filter
-`QUERY_HISTORY` on it.
-
-**Checkpoint:** roughly one MERGE per minute since you started the producer, each beginning at second
-`:00` and finishing in a second or two. Many short merges on a schedule, not one long-running one.
-
-## Optional B — Break it on purpose
-
-**Prompt:**
-
-```text
-Add a top-defect column to DEFECT_COUNTS_5MIN using MODE(DEFECT_CODE).
-```
-
-**Checkpoint:** it fails at `CREATE` time, not at refresh time:
-*"Change tracking is not supported on queries containing the function 'MODE'"*. That is why defects are
-counted at their natural grain and ranked at read time instead.
-
-## Optional C — Price the predicate
-
-`INSPECTIONS_ACTIVE` excludes rows the connector soft-deleted. Read-only, thirty seconds, and it turns
-that one-line predicate into a number.
-
-**Prompt:**
-
-```text
-Show me what yield would report if INSPECTIONS_ACTIVE did not filter soft-deleted rows:
-count QUALITY_INSPECTIONS with and without the predicate, and the yield each way.
-```
-
-**Checkpoint:** the two row counts differ, and so do the two yields. The gap is small and it never
-closes — a voided scan stays in the table forever, so a pipeline built without that predicate is not
-briefly wrong, it is permanently wrong by a margin that depends on how much your operators void. Nothing
-in the data tells you it happened.
-
----
-
 
 # How the skills work
 

@@ -239,21 +239,22 @@ Checkpoint J, then Checkpoint I. Then walk the change events, the three `EVENT_T
 above all the **merge gate** — the journal always leads the destination, and each MERGE fires at
 second :00 and finishes in a second or two. Checkpoint G-gate. Close by telling the attendee to
 build on `QUALITY_INSPECTIONS`, not the journal. Do not skip this step. `SF_METADATA`'s
-`PARSE_JSON` behaviour and the `QUERY_TAG` audit are Optional A, not core — cover them only if
-asked.
+`PARSE_JSON` behaviour and the `QUERY_TAG` audit are not core — cover them only if asked, and
+point at `docs/cdc-internals.md`.
 
 **Part 3 — the four Dynamic Tables.** `INSPECTIONS_ACTIVE` and `STATION_HEALTH` first
 (Checkpoint D), then `YIELD_BY_LINE_5MIN` and `DEFECT_COUNTS_5MIN` (Checkpoint Y). Both prompts
 specify source, grain, logic and column names, including the join keys and the `booth_humidity`
 metric; build what they specify and confirm against `solutions/04_dynamic_tables.sql`. Then show
-refresh history, and demonstrate the `MODE()` failure only if asked (Optional B).
+refresh history, and demonstrate the `MODE()` failure only if asked.
 
 **Part 4 — semantic view and agent.** Emit both verbatim from `solutions/`. Then send the
 attendee to chat with the agent in **Snowsight → AI & ML → Agents → Cascade Plant Analyst**, on
 the detail page's chat panel — not here. They do **not** need to Publish.
 
-**Part 5 — the incident, then the recovery.** **Do not restart the producer.** Change the world
-instead:
+**Part 5 — the dashboard, the incident, then the recovery.** Deploy the dashboard first, before
+`INCIDENT` — see *Deploying the live dashboard* below. Then **do not restart the producer.** Change
+the world instead:
 
 ```sql
 INSERT INTO MFG.RAW.SIMULATOR_CONTROL (MODE, UPDATED_AT)
@@ -277,7 +278,7 @@ real connector runs continuously — an incident changes the data at the source,
 the connector — and that restarting risks HTTP 409 `ERR_CHANNEL_HAS_UNCOMMITTED_DATA` from
 reopening a channel too soon.
 
-**Optional D — deploy the live dashboard.** For *deploy the dashboard*, *the plant floor
+**Deploying the live dashboard — Part 5's first step.** For *deploy the dashboard*, *the plant floor
 dashboard*, or *I want to see it live*. **Deploy the file that ships in `dashboard/`. Never
 generate, rewrite or "improve" it** — see *Not attendee build steps*. `PUT` works over the SQL
 connection, so no `snow` CLI and no local server:
@@ -425,7 +426,7 @@ Every fact has exactly one home. This skill carries no copies.
 **Not attendee build steps.** Do not offer to generate these: `external/read_iceberg.py` (Part 6,
 owned by the `iceberg-external-read` skill) and `dashboard/streamlit_app.py`. The dashboard file is
 **deployed, never generated** — writing a Streamlit app from a prompt takes several correction
-cycles, which is why the shipped file exists. Deploy it as Optional D; if asked to change it,
+cycles, which is why the shipped file exists. Deploy it at the top of Part 5; if asked to change it,
 deploy it as it stands first.
 
 ## Output

@@ -160,7 +160,7 @@ LIMIT 10;
 
 
 -- =====================================================================
--- THE NEGATIVE EXAMPLE (Optional B) -- run it and read the error
+-- THE NEGATIVE EXAMPLE -- run it and read the error
 -- =====================================================================
 -- MODE() is the first thing most people reach for here. Run it and read the
 -- error.
