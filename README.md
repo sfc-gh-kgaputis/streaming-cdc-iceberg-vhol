@@ -340,14 +340,10 @@ If those three lines are missing, the connector found the objects already there.
 | **Openflow CDC connector** | The **connector**. It "creates the schemas and destination tables matching the source tables"; you point it at a source and the objects appear. |
 | **Snowpipe Streaming client** | **You do.** The SDK auto-creates the *pipe*, never the table. Creating it is step 2 of Snowflake's own streaming quickstart. |
 
-So a managed connector provisions its own destination; a streaming application does not. That decides
-who owns your schema.
+**Start it once and leave it running for the rest of the lab.** You never stop or restart it; Part 5
+changes the data at the source instead.
 
-**You start this once and leave it running for the rest of the lab.** You will never stop it, and you
-will never restart it. A streaming pipeline is something you turn on and operate, not something you
-cycle every time conditions change.
-
-**Keep its output where you can see it.** It reports what the plant floor is doing, once a second:
+**Keep its output visible.** It reports the plant floor once a second:
 
 ```
 [telem] rows=1860 booth_humidity~44.0
@@ -357,12 +353,11 @@ cycle every time conditions change.
 
 In Part 5 this log shows the incident several seconds before any query does.
 
-Two sources doing two different jobs:
+Two sources, both over Snowpipe Streaming:
 
-- **CDC** → the journal, over Snowpipe Streaming. Stands in for Openflow's Postgres CDC connector:
-  inserts new scans, **updates** them when an inspector re-checks a frame, and **soft-deletes** voided
-  duplicate scans.
-- **Telemetry** → `STATION_TELEMETRY`, also Snowpipe Streaming, at ~60 rows/sec.
+- **CDC** → the journal. Inserts new scans, **updates** them when an inspector re-checks a frame, and
+  **soft-deletes** voided duplicate scans.
+- **Telemetry** → `STATION_TELEMETRY`, at ~60 rows/sec.
 
 Only the *connector* is simulated. See [What is real, and what is simulated](#what-is-real-and-what-is-simulated).
 
@@ -384,8 +379,6 @@ Show me the pipes and channels for these tables.
 
 **Checkpoint:** one pipe per target table, each with a name you did not choose, and no `CREATE PIPE`
 anywhere in this lab or in `solutions/`. Snowpipe Streaming auto-created them.
-
-Now the change data capture itself:
 
 **Prompt:**
 
@@ -412,8 +405,7 @@ latency here is a schedule you chose, not a throughput limit.
 
 **Build on the destination table, `QUALITY_INSPECTIONS`, never on the journal.** The journal is
 connector-internal: its name carries a generation counter and the connector prunes it on its own
-retention schedule. `QUALITY_INSPECTIONS` is the table the connector maintains for you, and it is what
-Part 3 reads.
+schedule. Part 3 reads `QUALITY_INSPECTIONS`.
 
 ## Part 3 — Refine it with Dynamic Tables
 
