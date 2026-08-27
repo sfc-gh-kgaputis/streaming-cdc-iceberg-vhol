@@ -289,7 +289,8 @@ Emit the spec from `solutions/06_agent.sql` verbatim. Four rules:
   pin it afterwards in Snowsight under **Configuration → Model**; `claude-sonnet-4-5`
   is a good pick where offered — mind the id, it is `claude-sonnet-4-5`, not
   `claude-4-sonnet`.
-- **Keep `execution_environment` in `tool_resources`** — see D17 below.
+- **Keep `execution_environment` in `tool_resources`.** Without it `CREATE AGENT`
+  succeeds and every question then fails with `internal error`, code 391920.
 - **To change the agent, re-run the whole `CREATE OR REPLACE AGENT` statement.** Do not
   attempt a workspace-file edit/redeploy path; this agent comes from SQL and is not
   tracked in a workspace, so that fails with *"Could not resolve workspace file …
@@ -417,7 +418,7 @@ step numbers here, when you talk to them.
    this step.
 
    `SF_METADATA`'s `PARSE_JSON` behaviour and the `QUERY_TAG` audit are **no longer core**
-   (D37). They are Optional A, after the six Parts. Cover them if the attendee asks or gets
+   They are Optional A, after the six Parts. Cover them if the attendee asks or gets
    there early; do not spend Part 2 on them.
 
 5. **Layer 1 — Part 3** — `INSPECTIONS_ACTIVE` and `STATION_HEALTH`. The attendee's
@@ -470,7 +471,7 @@ step numbers here, when you talk to them.
    really are scrap. If yield pins at exactly 100% with an empty `DEFECT_COUNTS_5MIN`,
    something is wrong. Confirm the DTs are still INCREMENTAL. Checkpoint R.
 
-10. **Read it from outside — Part 6** — the closing Part (D36). Do **not** generate anything:
+10. **Read it from outside — Part 6** — the closing Part. Do **not** generate anything:
     run the pre-written script with the venv interpreter,
     `.venv/bin/python external/read_iceberg.py`. PyIceberg is already installed from
     Setup D. The satellite skill `iceberg-external-read` owns this Part, including the two
@@ -530,7 +531,7 @@ If the attendee asks where they are, what they have built, what is missing, whet
 anything is flowing, or anything of that shape — **run the inventory statement in
 `solutions/progress.sql` verbatim**. Do not compose your own version; it is verified.
 
-It lists all eight buildable objects with a built / NOT YET status and an approximate
+It lists every buildable object with a built / NOT YET status and an approximate
 row count. Reading it for them:
 
 - Everything through their current Part should say `built`.
@@ -549,8 +550,8 @@ with `SHOW AGENTS LIKE 'CASCADE_PLANT_ANALYST' IN SCHEMA MFG.ANALYTICS;`.
 
 For *the column contract*, *check the columns*, *did my Dynamic Tables come out right*,
 or any request to verify Part 3's output beyond refresh mode — **run the `THE COLUMN
-CONTRACT` statement in `solutions/progress.sql` verbatim.** It checks the fourteen
-columns Parts 4–6 address by name, with their types.
+CONTRACT` statement in `solutions/progress.sql` verbatim.** It checks the columns
+Parts 4–6 address by name, with their types.
 
 Every row must read `ok`. For anything else:
 

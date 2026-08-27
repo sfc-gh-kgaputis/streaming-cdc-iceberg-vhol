@@ -10,14 +10,14 @@ Snowflake, not locked inside it. This Part proves it: PyIceberg reads the Gold D
 Table straight from object storage through the Horizon REST catalog, using vended
 credentials. No Snowflake warehouse computes the scan.
 
-**This is the last Part of the core lab (D36), and it is self-contained.** It needs only
+**This is the last Part of the core lab, and it is self-contained.** It needs only
 that a Gold Dynamic Table exists, it does not touch the pipeline, and nothing later
 depends on it. So it is safe to run at any point after Part 3, and a failure here costs
 the attendee nothing they built — say so, so they do not think the pipeline broke.
 
 ## Ships pre-written — do not generate it
 
-`external/read_iceberg.py` is **pre-written on purpose** (D19, unchanged by D36). Do not
+`external/read_iceberg.py` is **pre-written on purpose**. Do not
 offer to write it, and do not rewrite it if it fails. The auth path has two steps that are
 absent from the PyIceberg documentation, so a generated draft is broken in ways that cost
 more time than the Part is worth. Point the attendee at the script's own comments.

@@ -22,7 +22,7 @@ USE SCHEMA MFG.RAW;
 -- You never run it yourself.
 --
 -- The statement lives in producer/cdc_simulator.py, as MERGE_SQL. Read it there
--- rather than here: that is the copy that actually runs. The five invariants
+-- rather than here: that is the copy that actually runs. The invariants
 -- that make it correct are in docs/cdc-internals.md, "What the MERGE guarantees".
 
 
