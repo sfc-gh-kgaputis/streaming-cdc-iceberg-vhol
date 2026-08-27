@@ -1,6 +1,7 @@
 # Build Real-Time Pipelines on Iceberg with AI Agents
 
-Virtual Hands-On Lab · **27 August 2026, 10:00 AM PT**
+Virtual Hands-On Lab · **27 August 2026, 10:00 AM PT** ·
+[Register](https://www.snowflake.com/en/webinars/virtual-hands-on-lab/build-realtime-pipelines-on-iceberg-with-ai-agents-2026-08-27/)
 
 You will build a real-time manufacturing pipeline on Snowflake. Change data capture from an
 operational database lands in **Apache Iceberg** tables, **Dynamic Tables** refine it continuously,
