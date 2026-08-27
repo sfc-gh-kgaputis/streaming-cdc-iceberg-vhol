@@ -72,6 +72,21 @@ Back to the walkthrough: [README](../README.md).
 | A number changed since you last asked the same question | Correct, and interesting — inspectors overturn failed frames, which rewrites buckets already reported | Nothing to fix. That is Part 5's recovery. |
 | Part 5: `SIMULATOR_CONTROL does not exist`, or the producer logs `[control] read failed` | Part 1 created the landing tables but not the control table | Run [`solutions/01_environment.sql`](../solutions/01_environment.sql), which creates all three. Then re-run the Part 5 prompt. |
 
+## Dashboard — Part 5 (optional)
+
+| Symptom | Cause | Fix |
+|---|---|---|
+| The app loads blank, or errors before any chart | The source file was gzipped on upload. `PUT` compresses by default | Re-upload with `AUTO_COMPRESS = FALSE OVERWRITE = TRUE`, then `CREATE OR REPLACE STREAMLIT` again. |
+| *"No data yet — the pipeline has not produced any 5-minute buckets"*, and the producer **is** running | The Dynamic Tables are suspended, so rows land in `QUALITY_INSPECTIONS` while the layers above it stay frozen. Cleanup Block 1 suspends them | `SHOW DYNAMIC TABLES IN SCHEMA MFG.ANALYTICS` — any `scheduling_state = SUSPENDED` needs `ALTER DYNAMIC TABLE <name> RESUME`, upstream first. Give it a minute per layer. |
+| *"No data yet — the pipeline has not produced any 5-minute buckets"* | The producer is not running, or no 5-minute bucket has closed yet | Start the producer and wait about a minute. Confirm with the progress query. |
+| `Query failed: invalid identifier 'BUCKET'` — or `LINE`, `N`, `UNITS` | A Dynamic Table came out with a different column name | Run the column contract. It names the table and column; re-run that table's Part 3 prompt naming the column. |
+| Yield chart is empty but the tiles show numbers | The newest bucket is older than the chart's 60-minute window | The producer stopped. Restart it; earlier buckets stay as they were. |
+| Defect panel says *"No defects recorded in the last 15 minutes"* | Correct in steady state, and correct again once the producer has been idle 15 minutes | Nothing to fix. It fills in during the incident. |
+| `TypeError: unsupported operand` or a chart axis of `Decimal` values | The `::FLOAT` cast on `FIRST_PASS_YIELD_PCT` was removed | Put it back. The connector maps any `NUMBER` with scale > 0 to `decimal.Decimal`, which Altair cannot plot. |
+| `AttributeError: module 'streamlit' has no attribute 'fragment'`, or `TypeError: container() got an unexpected keyword argument 'horizontal'` | The `environment.yml` pin did not reach the app, so it resolved an older Streamlit. The app needs `st.fragment` (1.37+) and horizontal containers (1.49+) | `LIST @MFG.ANALYTICS.DASHBOARD_STAGE/plant_floor` must show `environment.yml` beside `streamlit_app.py`. `PUT` it if missing, then `CREATE OR REPLACE STREAMLIT`. Check the account offers the pinned version: `SELECT VERSION, RUNTIME_VERSION FROM INFORMATION_SCHEMA.PACKAGES WHERE PACKAGE_NAME = 'streamlit'`. |
+| You changed `streamlit_app.py`, re-`PUT` it, and the app still runs the old code | `PUT` updates the stage, and the running app does not pick it up on a browser reload alone | Re-run `CREATE OR REPLACE STREAMLIT ...` after the `PUT`, then reload. Restarting the app from Snowsight may be enough on its own; recreating the object definitely is. |
+| You cannot find the app | It is not under Worksheets | **Snowsight → Projects → Streamlit → Plant Floor — Live Quality**. |
+
 ## External read — Part 6
 
 | Symptom | Cause | Fix |

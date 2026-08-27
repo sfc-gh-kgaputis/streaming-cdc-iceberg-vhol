@@ -7,11 +7,12 @@ entities:
       database: MFG
       schema: ANALYTICS
     query_warehouse: HOL_WH
-    runtime_name: SYSTEM$ST_CONTAINER_RUNTIME_PY3_11
-    compute_pool: SYSTEM_COMPUTE_POOL_CPU
     main_file: streamlit_app.py
     artifacts:
       - streamlit_app.py
-    # No pyproject.toml and no external_access_integrations needed:
-    # the app uses only packages pre-installed in the SiS container runtime
-    # (streamlit, pandas, altair, snowflake-snowpark-python).
+      - environment.yml
+    # Warehouse runtime: no compute_pool and no runtime_name. A container
+    # runtime needs a compute pool node to start before the app serves, and
+    # the app only reads three Dynamic Tables, so the pool buys nothing here.
+    # environment.yml pins Streamlit: an unpinned warehouse-runtime app came up
+    # on a build with no st.fragment, which the auto-refresh needs.

@@ -1,12 +1,17 @@
 """Plant Floor — Live Quality Dashboard (Streamlit in Snowflake).
 
-Presenter-run demo for Part 5 of the Iceberg CDC VHOL.
-Renders yield and booth humidity on a shared time axis so the audience
-sees the humidity spike precede the PAINT yield drop.
+Renders yield and booth humidity on a shared time axis, so the humidity spike
+is visible ahead of the PAINT yield drop during Part 5's incident.
 
 Requires: Streamlit in Snowflake (SiS) — uses get_active_session().
-Auto-refreshes every 30 s via @st.fragment(run_every=...).
-All packages are pre-installed in the SiS container; no pyproject.toml needed.
+Auto-refreshes every 30 s, in place, via st.fragment(run_every=...). An Auto Refresh
+toggle and a Refresh button sit above the heading; turn auto off when you want the
+chart to hold still while you talk over it.
+Runs on a warehouse runtime: no compute pool. environment.yml pins Streamlit, and the
+pin is load-bearing — a warehouse runtime does not resolve the newest version it
+supports, and this app needs st.fragment (1.37+) and horizontal containers (1.49+).
+Reads MFG.ANALYTICS.YIELD_BY_LINE_5MIN and DEFECT_COUNTS_5MIN by column name,
+so run the Part 3 column contract before deploying it.
 """
 
 from __future__ import annotations
@@ -194,7 +199,6 @@ def _kpi_tiles(yield_df: pd.DataFrame) -> None:
 # Auto-refreshing fragment
 # ---------------------------------------------------------------------------
 
-@st.fragment(run_every=REFRESH_SECS)
 def live_dashboard() -> None:
     session = get_active_session()
 
@@ -206,12 +210,19 @@ def live_dashboard() -> None:
         return
 
     now = datetime.datetime.now(datetime.timezone.utc).strftime("%H:%M:%S UTC")
-    st.caption(f"Last refresh: {now}  ·  auto-refreshing every {REFRESH_SECS} s")
+    auto_on = st.session_state.get("auto_refresh", True)
+    mode = (
+        f"auto-refreshing every {REFRESH_SECS} s" if auto_on
+        else "auto-refresh disabled"
+    )
+    st.caption(f"Last refresh: {now}  ·  {mode}  ·  Streamlit in Snowflake")
 
     if yield_df.empty:
         st.info(
-            "No data yet — the pipeline has not produced any 5-minute buckets. "
-            "Start the producer and wait ~1 minute for the first bucket."
+            f"No data yet — no 5-minute bucket has closed in the last {LOOKBACK_MINUTES} "
+            "minutes. Either the producer is not running, or the Dynamic Tables are "
+            "suspended. Check `SHOW DYNAMIC TABLES IN SCHEMA MFG.ANALYTICS` for a "
+            "`scheduling_state` of SUSPENDED, and resume upstream tables first."
         )
         return
 
@@ -232,6 +243,31 @@ def live_dashboard() -> None:
 # App shell
 # ---------------------------------------------------------------------------
 
-st.set_page_config(page_title="Plant Floor — Live Quality", layout="wide")
+# Streamlit in Snowflake ignores page_title, page_icon and menu_items, so the
+# window title comes from the STREAMLIT object's TITLE instead.
+st.set_page_config(layout="wide")
+
+# A horizontal container right-aligns the controls and sizes them to their content,
+# so they sit next to each other and no column split can wrap the labels. The heading
+# gets its own full-width row underneath.
+#
+# Both controls sit OUTSIDE the fragment deliberately. `run_every` is bound when the
+# fragment is created, so toggling auto-refresh has to rerun the whole script to take
+# effect; a widget inside the fragment would only rerun the fragment. Clicking a button
+# reruns the script too, and nothing here is cached, so that click is the manual refresh.
+_controls = st.container(
+    horizontal=True,
+    horizontal_alignment="right",
+    vertical_alignment="center",
+)
+_controls.toggle("Auto Refresh", value=True, key="auto_refresh")
+_controls.button("Refresh")
+
 st.title("Plant Floor — Live Quality Dashboard")
-live_dashboard()
+
+_auto_on = st.session_state.get("auto_refresh", True)
+
+# st.fragment refreshes only this function, leaving the heading and controls in place,
+# where a whole-page rerun would re-lay-out everything on every tick. run_every=None
+# turns the timer off without changing anything else.
+st.fragment(run_every=REFRESH_SECS if _auto_on else None)(live_dashboard)()

@@ -87,7 +87,7 @@ Everything here is **pre-work**. Nothing installs during the session.
 | `solutions/` | The fast path: finished SQL for every Part, numbered to match. Safe to run at any time before Part 2; once the producer is streaming, run only the file for the Part you are on. Plus `progress.sql` ("where am I?") and `09_cleanup.sql`. |
 | `external/` | Part 6: read your Iceberg tables from your laptop with PyIceberg. |
 | `docs/` | [Troubleshooting](docs/troubleshooting.md), [CDC internals](docs/cdc-internals.md), [producer reference](docs/producer.md), the architecture diagram, and the three agent questions. |
-| `dashboard/` | The live dashboard the presenter shares on screen. Not a lab step. |
+| `dashboard/` | The live dashboard. Your presenter shares it on screen; deploying your own is an optional step in Part 5. |
 | `.snowflake/` | Two Cortex Code skills that load automatically. See [How the skills work](#how-the-skills-work). |
 
 ## Contents
@@ -537,6 +537,25 @@ Any change feed has two hard properties: a **cause arrives before its effect**, 
 arrives after the aggregate has already reported**. Here a paint booth drifts, then inspectors overturn
 the frames it spoiled.
 
+**Optional — put it on a screen.** Your presenter is already sharing this dashboard, so you can just
+watch. To run your own, deploy the app that ships in `dashboard/`. Do it **now**, not later: the next
+few minutes are the ones worth watching on a chart.
+
+**Prompt:**
+
+```text
+Deploy the plant floor dashboard.
+```
+
+Open it at **Snowsight → Projects → Streamlit → Plant Floor — Live Quality**. It refreshes itself
+every 30 seconds; **Auto-refresh** turns that off and **Refresh now** re-queries on demand.
+
+**Checkpoint:** one yield tile per line, and a chart carrying yield on the left axis with booth
+humidity dashed on the right. An empty defect panel is correct at this point — nothing has failed in
+the last 15 minutes yet.
+
+Skip this if you are behind. The rest of the Part reads the same tables in SQL.
+
 The producer is still running from Part 2, and it stays running. What changes is the **plant**, not the
 pipeline. You write a row to a control table and the running simulator picks it up within about
 ten seconds:
@@ -635,7 +654,7 @@ Use the iceberg-external-read skill: walk me through reading the Gold table.
 
 # Optional acts
 
-Both stand alone. Do either, both, or neither.
+Each stands alone. Do any, all, or none.
 
 ## Optional A — Look inside the connector
 

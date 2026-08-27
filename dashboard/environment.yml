@@ -1,0 +1,12 @@
+name: sf_env
+channels:
+  - snowflake
+dependencies:
+  # Load-bearing, not belt-and-braces. A warehouse runtime does not resolve the
+  # newest Streamlit it supports -- an unpinned app came up on a build with no
+  # st.fragment at all. This app needs st.fragment (1.37+) for in-place refresh
+  # and horizontal containers (1.49+) for the control row.
+  # Check the account before changing this:
+  #   SELECT VERSION, RUNTIME_VERSION FROM INFORMATION_SCHEMA.PACKAGES
+  #    WHERE PACKAGE_NAME = 'streamlit' AND LANGUAGE = 'python';
+  - streamlit=1.52.2

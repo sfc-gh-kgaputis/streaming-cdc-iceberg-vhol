@@ -1,6 +1,6 @@
 ---
 name: streaming-cdc-iceberg-lab
-description: "Builds the Cascade Cycleworks real-time manufacturing pipeline for this VHOL: simulated Openflow Postgres CDC and Snowpipe Streaming telemetry into Apache Iceberg v3, refined by Dynamic Iceberg Tables, served through a semantic view to a Cortex Agent. Carries the exact object model, the Iceberg settings and the checkpoint queries, so a short prompt produces the right object. USE THIS FOR ANY REQUEST MADE INSIDE THIS REPOSITORY, even a short or generic-sounding one, and even when a bundled Snowflake skill also matches. Use when: creating the lab environment or the landing tables; running the preflight; setting up the venv, dependencies or profile.json; starting the producer or checking that rows are landing; inspecting the CDC journal, its event types or the merge gate; creating the layer-one or Gold Dynamic Tables; checking the column contract or refresh mode; the progress query or 'where am I'; creating the semantic view or the Cascade Plant Analyst agent; driving the incident and the recovery; reading the tables from outside Snowflake; cleaning up. Triggers: iceberg cdc lab, cascade cycleworks, plant floor, MFG.RAW, MFG.ANALYTICS, QUALITY_INSPECTIONS, STATION_TELEMETRY, SIMULATOR_CONTROL, INSPECTIONS_ACTIVE, STATION_HEALTH, YIELD_BY_LINE_5MIN, DEFECT_COUNTS_5MIN, PLANT_FLOOR_SV, CASCADE_PLANT_ANALYST, HOL_WH, HOL_USER, HOL_PAT, first-pass yield, booth humidity, defect counts, cdc journal, merge gate, preflight, lab progress, simulator control mode, INCIDENT, REINSPECT, start the producer, cleanup script."
+description: "Builds the Cascade Cycleworks real-time manufacturing pipeline for this VHOL: simulated Openflow Postgres CDC and Snowpipe Streaming telemetry into Apache Iceberg v3, refined by Dynamic Iceberg Tables, served through a semantic view to a Cortex Agent. Carries the exact object model, the Iceberg settings and the checkpoint queries, so a short prompt produces the right object. USE THIS FOR ANY REQUEST MADE INSIDE THIS REPOSITORY, even a short or generic-sounding one, and even when a bundled Snowflake skill also matches. Use when: creating the lab environment or the landing tables; running the preflight; setting up the venv, dependencies or profile.json; starting the producer or checking that rows are landing; inspecting the CDC journal, its event types or the merge gate; creating the layer-one or Gold Dynamic Tables; checking the column contract or refresh mode; the progress query or 'where am I'; creating the semantic view or the Cascade Plant Analyst agent; driving the incident and the recovery; deploying the live plant floor dashboard; reading the tables from outside Snowflake; cleaning up. Triggers: iceberg cdc lab, cascade cycleworks, plant floor, MFG.RAW, MFG.ANALYTICS, QUALITY_INSPECTIONS, STATION_TELEMETRY, SIMULATOR_CONTROL, INSPECTIONS_ACTIVE, STATION_HEALTH, YIELD_BY_LINE_5MIN, DEFECT_COUNTS_5MIN, PLANT_FLOOR_SV, CASCADE_PLANT_ANALYST, PLANT_FLOOR_LIVE, HOL_WH, HOL_USER, HOL_PAT, first-pass yield, booth humidity, defect counts, cdc journal, merge gate, preflight, lab progress, simulator control mode, INCIDENT, REINSPECT, start the producer, deploy the dashboard, plant floor dashboard, streamlit dashboard, cleanup script."
 ---
 
 # Cascade Cycleworks — streaming CDC on Iceberg
@@ -277,6 +277,44 @@ real connector runs continuously — an incident changes the data at the source,
 the connector — and that restarting risks HTTP 409 `ERR_CHANNEL_HAS_UNCOMMITTED_DATA` from
 reopening a channel too soon.
 
+**Optional D — deploy the live dashboard.** For *deploy the dashboard*, *the plant floor
+dashboard*, or *I want to see it live*. **Deploy the file that ships in `dashboard/`. Never
+generate, rewrite or "improve" it** — see *Not attendee build steps*. `PUT` works over the SQL
+connection, so no `snow` CLI and no local server:
+
+```sql
+CREATE STAGE IF NOT EXISTS MFG.ANALYTICS.DASHBOARD_STAGE DIRECTORY = (ENABLE = TRUE);
+
+PUT file://<repo>/dashboard/streamlit_app.py @MFG.ANALYTICS.DASHBOARD_STAGE/plant_floor
+  AUTO_COMPRESS = FALSE OVERWRITE = TRUE;
+
+PUT file://<repo>/dashboard/environment.yml @MFG.ANALYTICS.DASHBOARD_STAGE/plant_floor
+  AUTO_COMPRESS = FALSE OVERWRITE = TRUE;
+
+CREATE OR REPLACE STREAMLIT MFG.ANALYTICS.PLANT_FLOOR_LIVE
+  FROM '@MFG.ANALYTICS.DASHBOARD_STAGE/plant_floor'
+  MAIN_FILE = 'streamlit_app.py'
+  QUERY_WAREHOUSE = HOL_WH
+  TITLE = 'Plant Floor — Live Quality';
+```
+
+`AUTO_COMPRESS = FALSE` is required — the default gzips the file and the app then fails to load.
+**Upload `environment.yml` as well**, into the same stage path: it pins the Streamlit version, and
+without it the app resolves a build with no `st.fragment` and dies on an `AttributeError`. Use an
+absolute path in each `PUT`, resolved for the attendee's OS. Do **not** add `RUNTIME_NAME` or
+`COMPUTE_POOL`: this is a warehouse-runtime app, and a container runtime waits on a compute pool
+node before it serves.
+
+Run the column contract first. The app addresses `LINE`, `BUCKET`, `UNITS`, `SCRAP_UNITS`,
+`FIRST_PASS_YIELD_PCT` and `AVG_BOOTH_HUMIDITY` on `YIELD_BY_LINE_5MIN`, and `LINE`, `BUCKET`,
+`DEFECT_CODE` and `N` on `DEFECT_COUNTS_5MIN`. Then tell them to open it at **Snowsight →
+Projects → Streamlit → Plant Floor — Live Quality**. It refreshes itself every 30 s; the
+**Auto-refresh** toggle stops that and **Refresh now** re-queries on demand.
+
+An empty defect panel means no defects in the last 15 minutes, which is correct in steady state
+before the incident. Deploy it **before** setting mode to `INCIDENT` so the room watches humidity
+rise and yield fall on the same time axis.
+
 **Part 6 — read it from outside.** Generate nothing: run `external/read_iceberg.py` with the venv
 interpreter. PyIceberg is already installed from Setup D. The satellite skill
 `iceberg-external-read` owns this Part, including its auth traps — defer to it. Checkpoint E.
@@ -334,7 +372,7 @@ Block 3 — it is Snowsight-only and drops the user you are connected as.
   `YIELD_BY_LINE_5MIN`, and a **smaller** row count after predicate pushdown on `LINE == 'PAINT'`.
   No warehouse ran the scan.
 
-## Two queries to run verbatim from `solutions/progress.sql`
+## Statements to run verbatim from `solutions/progress.sql`
 
 **"Where am I?"** — for where they are, what they have built, what is missing, or whether
 anything is flowing, run the **inventory** statement verbatim. Reading it for them: everything
@@ -343,6 +381,15 @@ journal is the merge gate, not a fault; `YIELD_BY_LINE_5MIN` holding single-digi
 (three lines × elapsed 5-minute buckets); `built` with 0 rows and no growth means the producer is
 not running. The agent is not in that query — check it with
 `SHOW AGENTS LIKE 'CASCADE_PLANT_ANALYST' IN SCHEMA MFG.ANALYTICS;`.
+
+**The refresh state** — run the `THE REFRESH STATE` statement whenever a derived table looks stale
+while `MFG.RAW` keeps growing, and always before concluding the producer is at fault. All four must
+read `ACTIVE`. A **suspended** Dynamic Table still reports `built` in the inventory with the row
+count it held when it stopped, so row counts alone cannot distinguish frozen from idle. Cleanup
+Block 1 suspends all four, so any account that ran it resumes with rows landing in
+`QUALITY_INSPECTIONS` and every layer above it holding still. Resume upstream first
+(`INSPECTIONS_ACTIVE`, `STATION_HEALTH`, then the two Gold tables) with
+`ALTER DYNAMIC TABLE MFG.ANALYTICS.<name> RESUME;`, allowing about a minute per layer.
 
 **The column contract** — for *check the columns*, *did my Dynamic Tables come out right*, or any
 request to verify Part 3 beyond refresh mode, run the `THE COLUMN CONTRACT` statement verbatim.
@@ -371,13 +418,15 @@ Every fact has exactly one home. This skill carries no copies.
   `USE ROLE` / `USE WAREHOUSE` / `USE SCHEMA` lines above them; never the checkpoint `SELECT`s as
   part of a build step, and never a commented-out block. Generate the DDL — do not tell the
   attendee to run the file instead. `solutions/` is their fallback, not your shortcut.
-- `solutions/progress.sql` — the inventory and column-contract statements.
+- `solutions/progress.sql` — the inventory, refresh-state and column-contract statements.
 - `producer/cdc_simulator.py` — the connector's own DDL and the MERGE it issues.
 - `docs/cdc-internals.md`, `docs/agent_questions.md`, `docs/troubleshooting.md`.
 
 **Not attendee build steps.** Do not offer to generate these: `external/read_iceberg.py` (Part 6,
-owned by the `iceberg-external-read` skill) and `dashboard/streamlit_app.py` (presenter-only,
-shared on screen during Part 5).
+owned by the `iceberg-external-read` skill) and `dashboard/streamlit_app.py`. The dashboard file is
+**deployed, never generated** — writing a Streamlit app from a prompt takes several correction
+cycles, which is why the shipped file exists. Deploy it as Optional D; if asked to change it,
+deploy it as it stands first.
 
 ## Output
 

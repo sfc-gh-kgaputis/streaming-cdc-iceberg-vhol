@@ -85,16 +85,45 @@ ORDER BY e.seq;
 --
 -- Any table showing 'built' with 0 rows and no growth means the producer is
 -- not running, or is running without the flag for that feed.
+--
+-- A SUSPENDED Dynamic Table still reads 'built', with whatever row count it
+-- held when it stopped. The row count alone cannot tell you it is frozen, so
+-- check the refresh state below whenever a derived table looks stale while
+-- MFG.RAW keeps growing.
 -- =====================================================================
+
+
+-- =====================================================================
+-- THE REFRESH STATE
+-- =====================================================================
+-- All four must read ACTIVE. Cleanup Block 1 suspends them to stop the spend,
+-- so any session that ran it starts the next one with a frozen pipeline: rows
+-- land in QUALITY_INSPECTIONS, and every layer above it holds still.
+--
+-- Resume upstream first -- INSPECTIONS_ACTIVE and STATION_HEALTH, then the two
+-- Gold tables -- and allow about a minute per layer to catch up:
+--
+--   ALTER DYNAMIC TABLE MFG.ANALYTICS.<name> RESUME;
+-- =====================================================================
+
+SHOW DYNAMIC TABLES IN SCHEMA MFG.ANALYTICS
+  ->> SELECT "name", "scheduling_state", "refresh_mode", "target_lag",
+             NULLIF("refresh_mode_reason", '') AS downgrade_reason
+      FROM $1 ORDER BY "name";
 
 
 -- =====================================================================
 -- THE COLUMN CONTRACT
 -- =====================================================================
 -- Part 3's prompts name the columns the later Parts read. Part 4's semantic
--- view, Part 5's agent and Part 6's external read all address them by name,
--- so a Dynamic Table that refreshes INCREMENTAL with the right row count can
--- still be wrong for them.
+-- view, Part 5's agent and dashboard, and Part 6's external read all address
+-- them by name, so a Dynamic Table that refreshes INCREMENTAL with the right
+-- row count can still be wrong for them.
+--
+-- The grain keys -- LINE, BUCKET, STATION_ID -- are checked alongside the
+-- measures. The semantic view declares them as PRIMARY KEY and joins on them,
+-- and the dashboard groups and plots by them, so a renamed key breaks more
+-- than a renamed measure does.
 --
 -- Run this after Part 3. It checks names and types together, because a
 -- BOOLEAN IS_SCRAP passes a name check and then breaks SUM() in the gold layer.
@@ -106,14 +135,20 @@ WITH contract AS (
       ('INSPECTIONS_ACTIVE', 'LINE',                 'TEXT'),
       ('INSPECTIONS_ACTIVE', 'EVENT_TS',             'TIMESTAMP_NTZ'),
       ('INSPECTIONS_ACTIVE', 'DEFECT_CODE',          'TEXT'),
+      ('STATION_HEALTH',     'STATION_ID',           'TEXT'),
+      ('STATION_HEALTH',     'LINE',                 'TEXT'),
       ('STATION_HEALTH',     'BUCKET',               'TIMESTAMP_NTZ'),
       ('STATION_HEALTH',     'AVG_VALUE',            'FLOAT'),
       ('STATION_HEALTH',     'MAX_VALUE',            'FLOAT'),
       ('STATION_HEALTH',     'METRIC',               'TEXT'),
+      ('YIELD_BY_LINE_5MIN', 'LINE',                 'TEXT'),
+      ('YIELD_BY_LINE_5MIN', 'BUCKET',               'TIMESTAMP_NTZ'),
       ('YIELD_BY_LINE_5MIN', 'UNITS',                'NUMBER'),
       ('YIELD_BY_LINE_5MIN', 'SCRAP_UNITS',          'NUMBER'),
       ('YIELD_BY_LINE_5MIN', 'FIRST_PASS_YIELD_PCT', 'NUMBER'),
       ('YIELD_BY_LINE_5MIN', 'AVG_BOOTH_HUMIDITY',   'FLOAT'),
+      ('DEFECT_COUNTS_5MIN', 'LINE',                 'TEXT'),
+      ('DEFECT_COUNTS_5MIN', 'BUCKET',               'TIMESTAMP_NTZ'),
       ('DEFECT_COUNTS_5MIN', 'N',                    'NUMBER'),
       ('DEFECT_COUNTS_5MIN', 'DEFECT_CODE',          'TEXT')
       AS t(object_name, column_name, expected_type)

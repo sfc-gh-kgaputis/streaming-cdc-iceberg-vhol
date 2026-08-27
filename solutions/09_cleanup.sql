@@ -35,9 +35,10 @@ SHOW DYNAMIC TABLES IN SCHEMA MFG.ANALYTICS
 DROP AGENT         IF EXISTS MFG.ANALYTICS.CASCADE_PLANT_ANALYST;
 DROP SEMANTIC VIEW IF EXISTS MFG.ANALYTICS.PLANT_FLOOR_SV;
 
--- Presenter only: the live dashboard, if you deployed it. Attendees will not
--- have this -- it is not a lab step, so IF EXISTS does the right thing.
+-- The live dashboard and the stage holding its source, if you deployed it in
+-- Part 5. It is optional, so IF EXISTS does the right thing either way.
 DROP STREAMLIT IF EXISTS MFG.ANALYTICS.PLANT_FLOOR_LIVE;
+DROP STAGE     IF EXISTS MFG.ANALYTICS.DASHBOARD_STAGE;
 
 DROP DYNAMIC TABLE IF EXISTS MFG.ANALYTICS.DEFECT_COUNTS_5MIN;
 DROP DYNAMIC TABLE IF EXISTS MFG.ANALYTICS.YIELD_BY_LINE_5MIN;
