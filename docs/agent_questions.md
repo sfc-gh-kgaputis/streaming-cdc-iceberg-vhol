@@ -41,7 +41,7 @@ simulator control mode to `INCIDENT`. The producer keeps running throughout; you
 were unaffected.
 
 Humidity comes from the telemetry feed and yield from the CDC feed, so neither source alone contains
-this answer. It exists because `YIELD_BY_LINE_5MIN` joined them on line and 5-minute bucket in Part 3.
+this answer.
 
 ---
 

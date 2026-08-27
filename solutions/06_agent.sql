@@ -3,35 +3,14 @@
 -- =====================================================================
 -- The Cascade Plant Analyst. A Cortex Agent grounded on the semantic view.
 --
--- THINGS THAT WILL COST YOU TIME:
+-- Three things the spec below gets right, so keep them when you edit it:
+--   * the specification is dollar-quoted with bare $$
+--   * models.orchestration is "auto"
+--   * tool_resources carries execution_environment, naming HOL_WH
 --
---  * Dollar-quote the spec with $$ and NOT a named tag like $spec$. Cortex
---    Code's SQL execution path rejects named dollar-quote tags. The spec JSON
---    never contains $$ itself, so plain $$ is safe.
+-- To change the agent, re-run this whole CREATE OR REPLACE statement.
 --
---  * Set models.orchestration to "auto". Agent orchestration has a narrower,
---    account-specific allowed-models list than Cortex COMPLETE does, so a
---    pinned model can fail with "not an allowed model for Agent". Pin it later
---    in Snowsight under Configuration -> Model if you want a specific one.
---
---  * To change the agent, RE-RUN this whole CREATE OR REPLACE statement. Do
---    not try a workspace-file edit/redeploy path -- this agent is created from
---    SQL and is not tracked in a workspace, so that fails with
---    "Could not resolve workspace file ... cortex-project.yaml".
---
---  * ALTER ACCOUNT SET CORTEX_ENABLED_CROSS_REGION = 'ANY_REGION' must have
---    run (00_bootstrap.sql, BLOCK 1). Without it the agent degrades or fails.
---
---  * Keep execution_environment in tool_resources. The Analyst tool needs a
---    warehouse to run its generated SQL in, and the spec is accepted without
---    one -- CREATE AGENT succeeds, then every question comes back as
---    "internal error (request_id: ...)", code 391920, which mentions neither
---    the warehouse nor the tool. Adding it is the whole fix.
---
--- WHERE TO CHAT WITH IT: Snowsight -> AI & ML -> Agents -> Cascade Plant Analyst,
--- using the chat panel on the detail page. You do NOT need to Publish -- the
--- agent already exists from this SQL. Publish is only for sharing a UI-edited
--- version.
+-- If anything misbehaves, see docs/troubleshooting.md, "Agent".
 -- =====================================================================
 
 USE ROLE ACCOUNTADMIN;

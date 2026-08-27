@@ -59,11 +59,7 @@ ALTER USER HOL_USER
     COMMENT = 'Iceberg CDC VHOL lab token';
 -- >>> Copy token_secret NOW (it is shown once) into a file named secret.pat
 -- >>> in the root of this repo. It is gitignored. <<<
-
--- NOTE: If you forgot to capture the code on initial creation, 
--- you can use ROTATE to get a new one!
--- ALTER USER HOL_USER
---   ROTATE PROGRAMMATIC ACCESS TOKEN HOL_PAT;
+-- If you miss it, docs/troubleshooting.md has the ROTATE statement.
 
 -- ================= BLOCK 3: your account identifier ==================
 -- Paste this value into Cortex Code's "Account identifier" field.

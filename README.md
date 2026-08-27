@@ -100,7 +100,7 @@ Everything here is **pre-work**. Nothing installs during the session.
 | [Part 5](#part-5--the-incident-and-the-recovery) | An incident, then a correction that rewrites history |
 | [Part 6](#part-6--read-it-from-your-laptop) | Read the same tables with PyIceberg, no warehouse |
 | [Optional A](#optional-a--look-inside-the-connector) · [Optional B](#optional-b--break-it-on-purpose) | Connector internals; a deliberate failure |
-| [Troubleshooting](docs/troubleshooting.md) | 27 symptoms with causes and fixes |
+| [Troubleshooting](docs/troubleshooting.md) | 42 symptoms with causes and fixes, grouped by Part |
 | [Cleanup](#cleanup) | Stop the spend. Do not skip it. |
 
 ---

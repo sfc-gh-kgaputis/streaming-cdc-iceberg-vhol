@@ -4,30 +4,20 @@
 -- You build this by PROMPTING Cortex Code. This file is what it should
 -- produce. Use it to check your work, or to catch up if you fall behind.
 --
--- The storage defaults below make Iceberg tables resolve to Snowflake-managed
--- storage at format version 3 with no table-level clauses. Set them before
--- creating any table.
+-- Two rules govern everything below, and the order matters:
 --
--- READ THIS, IT IS NOT WHAT YOU EXPECT (measured 26 Aug 2026):
+--   1. Set EXTERNAL_VOLUME, CATALOG and ICEBERG_VERSION_DEFAULT = 3 on
+--      MFG.RAW *and* MFG.ANALYTICS, before creating any table. A
+--      CREATE DYNAMIC ICEBERG TABLE has no version clause, so MFG.ANALYTICS's
+--      default decides the Gold layer's format version.
 --
---   EXTERNAL_VOLUME and CATALOG always resolve from the schema that CONTAINS the
---   new table. ICEBERG_VERSION_DEFAULT does not, and it resolves differently for
---   the two CREATE forms:
+--   2. Issue USE SCHEMA immediately before every plain Iceberg CREATE. For
+--      that form the version resolves from the session's schema, not the
+--      target's.
 --
---     CREATE ICEBERG TABLE          -> from the SESSION'S CURRENT SCHEMA
---     CREATE DYNAMIC ICEBERG TABLE  -> from the TARGET SCHEMA
---
--- So `CREATE ICEBERG TABLE MFG.RAW.T (...)` run without `USE SCHEMA MFG.RAW`
--- first gets the right volume and catalog but lands on **version 2**, even
--- though MFG.RAW has the version default set. SHOW PARAMETERS reports
--- `value = 3, level = SCHEMA` the whole time, so never use it as proof that v3
--- is working. Only a created table's iceberg_table_format_version counts.
---
--- A v2 table is created successfully; the damage shows up later as
--- `Unsupported data type 'VARIANT'` or a rejected TIMESTAMP_NTZ(9) from
--- TIME_SLICE(), deep in the pipeline where the cause is invisible. So:
--- USE SCHEMA before every plain Iceberg create, and set the defaults on BOTH
--- schemas. 02_preflight.sql checks the result rather than trusting it.
+-- Confirm the result on the created tables with 02_preflight.sql. Only a
+-- table's iceberg_table_format_version proves v3; SHOW PARAMETERS does not.
+-- If a table lands on v2, see docs/troubleshooting.md.
 -- =====================================================================
 
 USE ROLE ACCOUNTADMIN;
@@ -45,11 +35,8 @@ ALTER SCHEMA MFG.RAW SET EXTERNAL_VOLUME = 'SNOWFLAKE_MANAGED';
 ALTER SCHEMA MFG.RAW SET CATALOG = 'SNOWFLAKE';
 ALTER SCHEMA MFG.RAW SET ICEBERG_VERSION_DEFAULT = 3;
 
--- ANALYTICS needs these too, and it is easy to think it does not, because you
--- never create a plain Iceberg table there. Every object in it is a Dynamic
--- ICEBERG Table, those read the TARGET schema's version default, and
--- CREATE DYNAMIC ICEBERG TABLE has no ICEBERG_VERSION clause to override with.
--- This line is the only thing deciding whether the Gold layer is v3.
+-- ANALYTICS needs the same three, even though you never create a plain Iceberg
+-- table there: every object in it is a Dynamic Iceberg Table. See rule 1 above.
 ALTER SCHEMA MFG.ANALYTICS SET EXTERNAL_VOLUME = 'SNOWFLAKE_MANAGED';
 ALTER SCHEMA MFG.ANALYTICS SET CATALOG = 'SNOWFLAKE';
 ALTER SCHEMA MFG.ANALYTICS SET ICEBERG_VERSION_DEFAULT = 3;

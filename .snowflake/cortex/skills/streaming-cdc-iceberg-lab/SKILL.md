@@ -46,12 +46,9 @@ to be aware of, so you do not follow their guidance into a failure:
   described below — the single most expensive mistake available in this lab.
 - Bundled `dynamic-tables` does not carry the Dynamic **Iceberg** Table restrictions:
   no `IF NOT EXISTS`, no `ALTER DYNAMIC ICEBERG TABLE`, `CATALOG` must be
-  `'SNOWFLAKE'`, no backfill. Re-measured 26 Aug 2026 against the shipped Desktop
-  bundle: its `create/` path has **zero** Iceberg content, and `DYNAMIC ICEBERG` appears
-  **zero** times in either bundled `dynamic-tables` or bundled `iceberg`. One row in
-  `create-or-alter-guidance.md` names Iceberg dynamic tables, only to exclude them from
-  `CREATE OR ALTER`. So neither skill can **construct** one — you are the only source of
-  the DDL. Build it from the Object Model and `solutions/`.
+  `'SNOWFLAKE'`, no backfill. Confirmed 26 Aug 2026 against the shipped Desktop bundle:
+  neither bundled `dynamic-tables` nor bundled `iceberg` contains `DYNAMIC ICEBERG` DDL,
+  so you are the only source of it. Build it from the Object Model and `solutions/`.
   **But defer to bundled `dynamic-tables` on refresh behaviour.** Refresh history,
   `refresh_mode_reason` and incremental-refresh eligibility are properties of the query,
   not the storage format, so its guidance is correct for these tables. Part 3's
@@ -152,7 +149,7 @@ not a script. Give the attendee the instruction, not the diagnosis: *"Setting
 tables."* Do not tell them the parameter is reported and ignored, do not describe the
 behaviour as inconsistent or as a bug, and do not narrate how long it took to find. If
 they hit a v2 table, name the fix — recreate it — and point at
-[Troubleshooting](../../../../README.md#troubleshooting), which is the one place the cause
+[Troubleshooting](../../../../docs/troubleshooting.md), which is the one place the cause
 belongs.
 
 ## Object Model (single source of truth)

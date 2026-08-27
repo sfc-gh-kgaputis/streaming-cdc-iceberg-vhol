@@ -19,27 +19,15 @@
 --                                   v
 --                      DEFECT_COUNTS_5MIN
 --
--- THINGS THAT WILL COST YOU TIME, all of them measured on a real account:
+-- Every TIME_SLICE() below is cast to ::TIMESTAMP_NTZ(6). TIME_SLICE() returns
+-- scale 9, which Iceberg v2 rejects; the cast costs nothing on an all-v3 chain
+-- and keeps working if a schema default is ever missed.
 --
---  * TIME_SLICE() returns TIMESTAMP_NTZ(9). Iceberg v2 rejects scale 9. On an
---    all-v3 chain a bare TIME_SLICE() is accepted, but the ::TIMESTAMP_NTZ(6)
---    cast below is kept deliberately: it costs nothing and it keeps working if
---    a schema default is ever missed. A Dynamic Iceberg Table takes its format
---    version from the schema it is created IN -- MFG.ANALYTICS here -- and
---    CREATE DYNAMIC ICEBERG TABLE has no version clause, so that default is the
---    only thing standing between this file and a v2 Gold layer. 02_preflight.sql
---    check 4 is what proves it.
+-- "Top defect" is a grain here, derived at read time, because MODE() cannot be
+-- used in a Dynamic Table. See the negative example at the end of this file.
 --
---  * MODE() is a hard CREATE error under change tracking, not a slow path:
---    "Change tracking is not supported on queries containing the function 'MODE'".
---    That is why "top defect" is a grain here and derived at read time.
---
---  * OBJECT / OBJECT_AGG output cannot land in an Iceberg table on v2 OR v3.
---
---  * Pin TARGET_LAG on every layer. TARGET_LAG = DOWNSTREAM inherits from the
---    consumer, so a "1 minute" pipeline can quietly run at the consumer's lag.
---
---  * APPROX_PERCENTILE forces a FULL refresh. Avoid it here.
+-- If a table comes back FULL, or with the wrong columns, see
+-- docs/troubleshooting.md, "Dynamic Tables".
 -- =====================================================================
 
 USE ROLE ACCOUNTADMIN;

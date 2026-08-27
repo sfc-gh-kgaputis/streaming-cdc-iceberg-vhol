@@ -82,15 +82,8 @@ SHOW ICEBERG TABLES IN DATABASE MFG
 -- aws_ok, cortex_ok, raw_iceberg_ok and analytics_iceberg_ok must ALL be TRUE,
 -- and every row of the last query must show is_v3 = TRUE.
 --
--- If either *_iceberg_ok is FALSE, or a CREATE failed with
--- "Unsupported data type 'VARIANT' for iceberg tables":
---   Your session's current schema was not one that resolves
---   ICEBERG_VERSION_DEFAULT = 3. Re-run 01_environment.sql (it sets the
---   database-level default and issues USE SCHEMA before each create), then
---   recreate any table that came back v2 and re-run this file.
---
--- If cortex_ok is FALSE: re-run BLOCK 1 of 00_bootstrap.sql as ACCOUNTADMIN
--- in Snowsight.
+-- Do not build anything on top until they do. For any FALSE, see
+-- docs/troubleshooting.md.
 -- =====================================================================
 
 -- A trailing real statement, deliberately: Snowsight parses text after the last

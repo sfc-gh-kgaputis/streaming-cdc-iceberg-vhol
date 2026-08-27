@@ -15,10 +15,9 @@ Where to look, if you are reading rather than running:
     JournalSink         the faithful path: streaming append + the merge processor
     merge_loop()        the CRON gate, and where the CDC latency really comes from
 
-Those five are the lab. The rest is supporting cast: `CdcSimulator` shapes the
-plant's behaviour, `DryRunCdcSink` serves `--dry-run` in Setup D, and
-`DirectDmlSink` is a recovery path for `--cdc-mode direct` that the lab does not
-use -- it skips the journal entirely, so it teaches none of the above.
+Those five implement the connector path. `CdcSimulator` generates the plant's
+events, `DryRunCdcSink` serves `--dry-run` in Setup D, and `DirectDmlSink` backs
+`--cdc-mode direct`, which writes to the destination table and skips the journal.
 """
 
 from __future__ import annotations

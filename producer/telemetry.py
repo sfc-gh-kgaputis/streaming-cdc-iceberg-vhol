@@ -1,8 +1,8 @@
 """The station telemetry feed: sensors streaming straight into Iceberg.
 
 This half is NOT Openflow. It is a plain Snowpipe Streaming client writing to a
-Snowflake-managed Iceberg table, which is why the attendee creates that table by
-hand while the CDC objects are created by the simulated connector.
+Snowflake-managed Iceberg table, so its target table is created directly rather
+than provisioned by the simulated connector.
 """
 
 from __future__ import annotations

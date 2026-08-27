@@ -13,14 +13,13 @@ hands-on lab. Setup, the walkthrough, and troubleshooting are in
   explain something, name the capability first and the plant second.
 - You build the pipeline by **prompting Cortex Code**, not by writing SQL yourself.
   Two skills in `.snowflake/cortex/skills/` load automatically when you open this
-  folder: `streaming-cdc-iceberg-lab` supplies the object names, Iceberg settings
-  and checkpoint queries every part expects, and `iceberg-external-read` covers
-  Part 6. Nothing to install. You can name either explicitly with `$`, but
-  you never have to.
+  folder. Nothing to install. You can name either explicitly with `$`, but you
+  never have to.
 - **Use the object names the skill gives you.** Later parts and every checkpoint
   query depend on them.
 - `solutions/` is the answer key, one file per part. Read it whenever you want — it
-  carries inline notes on the constraints that cost time, not just the DDL.
+  explains why each object is shaped the way it is, not just the DDL. When something
+  goes wrong, go to [docs/troubleshooting.md](docs/troubleshooting.md) instead.
 - **Never commit a credential.** The lab mints a token for you. `.gitignore` already
   excludes `secret.pat`, `profile.json`, and key files. Keep it that way — this repo
   is public.
