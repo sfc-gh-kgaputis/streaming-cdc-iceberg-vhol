@@ -106,11 +106,12 @@ FROM MFG.RAW.QUALITY_INSPECTIONS
 WHERE _SNOWFLAKE_UPDATED_AT > _SNOWFLAKE_INSERTED_AT AND NOT _SNOWFLAKE_DELETED
 LIMIT 5;
 
--- 8. Where the latency actually lives: it is a schedule, and you choose it. The gate
---    defaults to 60s -- the connector's own flow default of second :00 every minute.
---    In a real deployment you change it with the connector's `Merge Task Schedule CRON`
---    parameter; here it is `--merge-gate-seconds`. The trade is warehouse time: more
---    merges, smaller batches.
+-- 8. Where the latency actually lives: it is a schedule, and you choose it. This lab
+--    runs a 60s gate -- second :00 of every minute. In a real deployment that is the
+--    connector's `Merge Task Schedule CRON` parameter; here it is
+--    `--merge-gate-seconds`. The trade is warehouse time: more merges, smaller
+--    batches. Note the docs state no shipped default and treat `* * * * * ?` (merge
+--    continuously) as the value to return to, so the one minute is this lab's choice.
 --
 --    Changing it means restarting the producer, which this lab never asks you to do --
 --    so this is a knob to understand, not one to turn today. If you rehearse the lab

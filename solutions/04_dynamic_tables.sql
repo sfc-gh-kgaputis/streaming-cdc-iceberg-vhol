@@ -64,9 +64,9 @@ CREATE OR REPLACE DYNAMIC ICEBERG TABLE MFG.ANALYTICS.STATION_HEALTH
 AS
 SELECT STATION_ID, LINE, METRIC,
        TIME_SLICE(EVENT_TS, 5, 'MINUTE')::TIMESTAMP_NTZ(6) AS BUCKET,
-       COUNT(*)   AS READINGS,
-       AVG(VALUE) AS AVG_VALUE,
-       MAX(VALUE) AS MAX_VALUE
+       COUNT(*)::NUMBER(9,0) AS READINGS,
+       AVG(VALUE)            AS AVG_VALUE,
+       MAX(VALUE)            AS MAX_VALUE
 FROM MFG.RAW.STATION_TELEMETRY
 GROUP BY 1, 2, 3, 4;
 
@@ -87,10 +87,10 @@ CREATE OR REPLACE DYNAMIC ICEBERG TABLE MFG.ANALYTICS.YIELD_BY_LINE_5MIN
 AS
 SELECT s.LINE,
        TIME_SLICE(s.EVENT_TS, 5, 'MINUTE')::TIMESTAMP_NTZ(6)   AS BUCKET,
-       COUNT(*)                                                AS UNITS,
-       SUM(s.IS_SCRAP)                                         AS SCRAP_UNITS,
-       ROUND(100 * (COUNT(*) - SUM(s.IS_SCRAP)) / COUNT(*), 2) AS FIRST_PASS_YIELD_PCT,
-       AVG(h.AVG_VALUE)                                        AS AVG_BOOTH_HUMIDITY
+       COUNT(*)::NUMBER(9,0)                                                AS UNITS,
+       SUM(s.IS_SCRAP)::NUMBER(9,0)                                         AS SCRAP_UNITS,
+       ROUND(100 * (COUNT(*) - SUM(s.IS_SCRAP)) / COUNT(*), 2)::NUMBER(5,2) AS FIRST_PASS_YIELD_PCT,
+       AVG(h.AVG_VALUE)                                                     AS AVG_BOOTH_HUMIDITY
 FROM MFG.ANALYTICS.INSPECTIONS_ACTIVE s
 LEFT JOIN MFG.ANALYTICS.STATION_HEALTH h
        ON h.LINE   = s.LINE
@@ -114,7 +114,7 @@ AS
 SELECT LINE,
        TIME_SLICE(EVENT_TS, 5, 'MINUTE')::TIMESTAMP_NTZ(6) AS BUCKET,
        COALESCE(DEFECT_CODE, 'NONE')                       AS DEFECT_CODE,
-       COUNT(*)                                            AS N
+       COUNT(*)::NUMBER(9,0)                               AS N
 FROM MFG.ANALYTICS.INSPECTIONS_ACTIVE
 GROUP BY 1, 2, 3;
 

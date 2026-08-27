@@ -13,7 +13,10 @@
 --
 --   2. Issue USE SCHEMA immediately before every plain Iceberg CREATE. For
 --      that form the version resolves from the session's schema, not the
---      target's.
+--      target's. This one is MEASURED, not documented -- taken on a trial
+--      account on 26 Aug 2026. Snowflake's docs describe symmetric inheritance
+--      for all three parameters and say nothing about a session dependency, so
+--      it may change. The discipline is worth keeping either way.
 --
 -- Confirm the result on the created tables with 02_preflight.sql. Only a
 -- table's iceberg_table_format_version proves v3; SHOW PARAMETERS does not.

@@ -11,6 +11,7 @@ How to run:
 
 from __future__ import annotations
 
+import re
 import time
 from types import SimpleNamespace
 
@@ -262,10 +263,11 @@ class TestDeterminism:
         sim = p.CdcSimulator(make_args(seed=seed), sink)
         for _ in range(10):
             sim.tick(5)
-        # INSPECTION_ID uses uuid4() which is not seeded by self.rng — exclude it.
-        # All other fields (LINE, STATUS, DEFECT_CODE, SKU, UNIT_ID) are RNG-seeded.
+        # INSPECTION_ID is included deliberately: it is derived from self.rng, so a
+        # seeded run reproduces the keys too. If it ever goes back to uuid4() this
+        # test is what catches it.
         return [
-            (r["UNIT_ID"], r["STATUS"], r["LINE"], r["DEFECT_CODE"])
+            (r["INSPECTION_ID"], r["UNIT_ID"], r["STATUS"], r["LINE"], r["DEFECT_CODE"])
             for r, _, _ in sink.inserts
         ]
 
@@ -274,3 +276,12 @@ class TestDeterminism:
 
     def test_different_seeds_produce_different_output(self):
         assert self._run(1) != self._run(2)
+
+    def test_inspection_ids_are_unique_within_a_run(self):
+        ids = [row[0] for row in self._run(99)]
+        assert len(ids) == len(set(ids))
+
+    def test_inspection_id_shape_is_stable(self):
+        # S- plus 12 lowercase hex digits, the same width uuid4().hex[:12] gave.
+        for inspection_id, *_ in self._run(7):
+            assert re.fullmatch(r"S-[0-9a-f]{12}", inspection_id)

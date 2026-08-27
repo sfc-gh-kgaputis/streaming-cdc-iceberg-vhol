@@ -41,6 +41,10 @@ def _fetch_yield(session) -> pd.DataFrame:
             BUCKET,
             UNITS,
             SCRAP_UNITS,
+            -- Keep this cast. The Dynamic Table now declares NUMBER(5,2) rather than the
+            -- inferred NUMBER(29,2), which fixes the Iceberg schema an external engine
+            -- reads -- but it does not change the Python connector, which maps ANY
+            -- NUMBER with scale > 0 to decimal.Decimal. Altair cannot plot a Decimal.
             FIRST_PASS_YIELD_PCT::FLOAT AS FIRST_PASS_YIELD_PCT,
             AVG_BOOTH_HUMIDITY
         FROM MFG.ANALYTICS.YIELD_BY_LINE_5MIN

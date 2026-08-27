@@ -101,7 +101,7 @@ Everything here is **pre-work**. Nothing installs during the session.
 | [Part 4](#part-4--ask-it-questions-in-english) | Semantic view, then a Cortex Agent over it |
 | [Part 5](#part-5--the-incident-and-the-recovery) | An incident, then a correction that rewrites history |
 | [Part 6](#part-6--read-it-from-your-laptop) | Read the same tables with PyIceberg, no warehouse |
-| [Optional A](#optional-a--look-inside-the-connector) · [Optional B](#optional-b--break-it-on-purpose) | Connector internals; a deliberate failure |
+| [Optional A](#optional-a--look-inside-the-connector) · [B](#optional-b--break-it-on-purpose) · [C](#optional-c--price-the-predicate) | Connector internals; a deliberate failure; the cost of one predicate |
 | [Troubleshooting](docs/troubleshooting.md) | Symptoms, causes and fixes, grouped by Part |
 | [Cleanup](#cleanup) | Stop the spend. Do not skip it. |
 
@@ -313,9 +313,9 @@ Start the producer in the background with both sources, then verify rows are lan
 targets and says so:
 
 ```
-[connector] destination table ready
-[connector] journal ready
-[connector] journal stream ready
+10:02:14 [connector] destination table ready
+10:02:14 [connector] journal ready
+10:02:15 [connector] journal stream ready
 ```
 
 Those three lines print whether the connector created the objects or found them already there. A managed
@@ -333,9 +333,9 @@ changes the data at the source instead.
 **Keep its output visible.** It reports the plant floor every 15 seconds, and every merge as it fires:
 
 ```
-[telem] rows=1860 booth_humidity~44.0
-[merge] gate fired: 122 rows applied in 1.5s (merges=1 rows_total=122)
-[cdc] inserts=62 updates=0 soft_deletes=1
+10:03:30 [telem] rows=1860 booth_humidity~44.0
+10:04:00 [merge] gate fired: 122 rows applied in 1.5s (merges=1 rows_total=122)
+10:04:00 [cdc] inserts=62 updates=0 soft_deletes=1
 ```
 
 In Part 5 this log shows the incident several seconds before any query does.
@@ -347,8 +347,9 @@ of scans per second, so expect telemetry in the tens of thousands while the jour
 thousands. That ratio is correct, not a fault.
 
 **Checkpoint:** journal events, destination rows and telemetry rows all climb when you re-run the
-query. Telemetry lag is **~30 seconds**, which is what a streaming Iceberg target does while Snowflake
-sizes Parquet files sensibly. Expected, not a fault.
+query. Telemetry lag is **~30 seconds** on this account, measured. Expected, not a fault — and worth
+knowing as a planning number, because it is the floor under the CDC path too: lowering the merge gate
+below it buys you nothing.
 
 ### While that first 30 seconds passes
 
@@ -376,7 +377,8 @@ default rate. It grows until the gate fires, drops, and grows again. A gap that 
 the merge is not running; a gap of zero means you are looking between a merge and its next batch.
 
 **Checkpoint:** the journal count **exceeds** the destination count. That gap is the merge gate, not a
-backlog. Each merge starts at second **:00** of a minute and finishes in a second or two. So the
+backlog. Each merge starts at second **:00** of a minute and finishes in a second or two — read that
+straight off the producer's log, where every `[merge] gate fired` line is stamped `:00`. So the
 latency here is a schedule you chose, not a throughput limit.
 
 **Build on the destination table, `QUALITY_INSPECTIONS`, never on the journal.** The journal is
@@ -565,9 +567,11 @@ Now watch the cascade arrive layer by layer, and time it:
 |---|---|---|
 | Booth humidity climbs ~44 → ~70 | `STATION_HEALTH` | ~30–60 s |
 | PAINT defects spike, `PAINT_RUN` dominates | `DEFECT_COUNTS_5MIN` | ~90 s later |
-| PAINT yield falls into the **80s**, then the high 70s | `YIELD_BY_LINE_5MIN` | ~1–2 min after that |
+| PAINT yield falls into the **70s or 80s** | `YIELD_BY_LINE_5MIN` | ~1–2 min after that |
 
-WELD and ASSEMBLY stay around 96–97% throughout. They are your control.
+Which one you land on depends on where in the 5-minute bucket the incident started: a partly
+affected bucket sits in the 80s, a fully affected one in the high 70s. WELD and ASSEMBLY stay
+around 96–98% throughout. They are your control.
 
 In the Snowsight agent tab, ask question 3:
 
@@ -672,6 +676,23 @@ Add a top-defect column to DEFECT_COUNTS_5MIN using MODE(DEFECT_CODE).
 **Checkpoint:** it fails at `CREATE` time, not at refresh time:
 *"Change tracking is not supported on queries containing the function 'MODE'"*. That is why defects are
 counted at their natural grain and ranked at read time instead.
+
+## Optional C — Price the predicate
+
+`INSPECTIONS_ACTIVE` excludes rows the connector soft-deleted. Read-only, thirty seconds, and it turns
+that one-line predicate into a number.
+
+**Prompt:**
+
+```text
+Show me what yield would report if INSPECTIONS_ACTIVE did not filter soft-deleted rows:
+count QUALITY_INSPECTIONS with and without the predicate, and the yield each way.
+```
+
+**Checkpoint:** the two row counts differ, and so do the two yields. The gap is small and it never
+closes — a voided scan stays in the table forever, so a pipeline built without that predicate is not
+briefly wrong, it is permanently wrong by a margin that depends on how much your operators void. Nothing
+in the data tells you it happened.
 
 ---
 

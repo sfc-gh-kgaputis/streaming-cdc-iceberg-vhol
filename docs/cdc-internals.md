@@ -47,8 +47,10 @@ retracted rows count for ever.
 ## The merge gate
 
 There is **no Snowflake task**. The connector's merge processor runs inside the connector runtime and
-issues the MERGE itself over its own connection, on a CRON eligibility gate — second `:00` of every
-minute by default. The producer does the same thing on the same gate.
+issues the MERGE itself over its own connection, on a CRON eligibility gate set by the connector's
+`Merge Task Schedule CRON` parameter. This lab runs it at second `:00` of every minute; that one minute
+is the lab's choice, not a documented default — Snowflake's docs treat `* * * * * ?` (merge
+continuously) as the value to return to. The producer does the same thing on the same gate.
 
 So the journal always leads the destination, by up to a minute's worth of change events. That gap is a
 schedule you chose, not a throughput limit. The merge itself takes a second or two.

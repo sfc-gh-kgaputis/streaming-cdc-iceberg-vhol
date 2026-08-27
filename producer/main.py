@@ -53,8 +53,9 @@ def main() -> None:
         type=float,
         default=60.0,
         help="the connector's CRON merge-eligibility gate, in seconds "
-        "(default 60, matching the flow default of second :00 every "
-        "minute). Lower it to watch CDC latency fall.",
+        "(default 60, i.e. second :00 of every minute -- this lab's choice, not a "
+        "documented connector default). Lower it to watch CDC latency fall, but "
+        "not below the ~30s streaming floor.",
     )
     ap.add_argument(
         "--no-merge",
