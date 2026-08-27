@@ -5,8 +5,8 @@
 -- reason about: business names, synonyms, and the metric definitions, so the
 -- agent is not guessing at what a column means.
 --
--- SYNTAX RULES. Cortex Code has historically generated all four of these wrong.
--- If a CREATE fails, re-emit this DDL verbatim rather than improvising:
+-- SYNTAX RULES. Emit all four exactly as written; each is a form that is easy to
+-- get wrong. If a CREATE fails, re-emit this DDL verbatim rather than improvising:
 --   1. Clause order is fixed: TABLES -> RELATIONSHIPS -> FACTS -> DIMENSIONS -> METRICS
 --   2. Tables use AS, never '=':          yield AS MFG.ANALYTICS....
 --   3. Synonyms use WITH SYNONYMS = (...), never a bare SYNONYMS = (...)
@@ -60,11 +60,11 @@ CREATE OR REPLACE SEMANTIC VIEW MFG.ANALYTICS.PLANT_FLOOR_SV
     stations.reading_avg AS AVG_VALUE,
     stations.reading_max AS MAX_VALUE
   )
-  -- SYNONYMS are the highest-leverage thing in this file. A plant manager says
-  -- "work centre" and "stage"; the column is called LINE. Every synonym you
-  -- add is a question that now resolves without clarification. COMMENTs do
-  -- the same job for values -- note the two places that spell out what NONE
-  -- means, because "the top defect is NONE" is the classic wrong answer.
+  -- Add a synonym for every word a plant manager uses for a column. A plant
+  -- manager says "work centre" and "stage"; the column is called LINE. Every
+  -- synonym you add is a question that now resolves without clarification.
+  -- COMMENTs do the same job for values -- note the two places that spell out
+  -- what NONE means, because "the top defect is NONE" is the classic wrong answer.
   DIMENSIONS (
     yield.line AS LINE
       WITH SYNONYMS = ('line', 'production line', 'work centre', 'stage')
@@ -121,8 +121,8 @@ SELECT * FROM SEMANTIC_VIEW(MFG.ANALYTICS.PLANT_FLOOR_SV
   WHERE yield.line = 'PAINT' AND defects.defect_code <> 'NONE')
 ORDER BY 2 DESC;
 
--- Q3  "Why did PAINT yield drop?"  <- the payoff, and the reason the second
---     data source exists. Yield and booth humidity in the same result set,
+-- Q3  "Why did PAINT yield drop?"  <- needs both data sources at once.
+--     Yield and booth humidity in the same result set,
 --     bucket by bucket. During the incident you see humidity climb from ~44
 --     into the 60s-70s while yield falls from ~99% to the mid 70s.
 SELECT * FROM SEMANTIC_VIEW(MFG.ANALYTICS.PLANT_FLOOR_SV

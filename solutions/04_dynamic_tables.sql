@@ -85,8 +85,8 @@ GROUP BY 1, 2, 3, 4;
 -- ---------------------------------------------------------------------
 -- Gold 1: yield per line per 5 minutes, WITH the booth metric alongside it.
 --
--- This is the join that pays for the second data source. Yield alone tells you
--- PAINT is scrapping frames; yield next to humidity tells you WHY.
+-- Yield alone tells you PAINT is scrapping frames; yield next to humidity tells
+-- you WHY.
 --
 -- AVG_BOOTH_HUMIDITY is NULL for WELD and ASSEMBLY, which is correct: booth
 -- humidity is a paint-booth metric. The LEFT JOIN keeps those lines in the
@@ -174,8 +174,8 @@ LIMIT 10;
 -- =====================================================================
 -- THE NEGATIVE EXAMPLE (Optional B) -- run it and read the error
 -- =====================================================================
--- This is a real, instructive failure, not a contrived one. It is the first
--- thing most people reach for.
+-- MODE() is the first thing most people reach for here. Run it and read the
+-- error.
 --
 -- CREATE OR REPLACE DYNAMIC ICEBERG TABLE MFG.ANALYTICS.TOP_DEFECT_BROKEN
 --   TARGET_LAG = '1 minute' WAREHOUSE = HOL_WH REFRESH_MODE = INCREMENTAL

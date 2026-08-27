@@ -66,8 +66,8 @@ $$;
 -- =====================================================================
 SHOW AGENTS LIKE 'CASCADE_PLANT_ANALYST' IN SCHEMA MFG.ANALYTICS;
 
--- Then go to Snowsight -> AI & ML -> Agents -> Cascade Plant Analyst and ask,
--- in this order. The third one is the payoff:
+-- Then go to Snowsight -> AI & ML -> Agents -> Cascade Plant Analyst and ask
+-- these three in order:
 --
 --   1. "What is first-pass yield by line right now?"
 --   2. "Which defect is driving scrap on PAINT?"

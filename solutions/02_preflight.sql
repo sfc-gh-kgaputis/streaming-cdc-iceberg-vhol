@@ -28,8 +28,8 @@ SHOW PARAMETERS LIKE 'CORTEX_ENABLED_CROSS_REGION' IN ACCOUNT
   ->> SELECT "value" AS cross_region, "value" <> 'DISABLED' AS cortex_ok FROM $1;
 
 -- 3. Managed Iceberg v3 really resolves in MFG.RAW, where both feeds land.
---    The CREATE deliberately specifies no catalog, volume, or version -- that is
---    the point. The VARIANT column is the actual test: v2 rejects VARIANT
+--    The CREATE specifies no catalog, volume or version, so it tests inheritance.
+--    The VARIANT column is the actual test: v2 rejects VARIANT
 --    outright, so if this statement succeeds AND reports version 3, the whole
 --    inheritance chain is working.
 USE SCHEMA MFG.RAW;

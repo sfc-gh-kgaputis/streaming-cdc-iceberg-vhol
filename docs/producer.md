@@ -1,19 +1,16 @@
 # The producer
 
-Reference for `producer/main.py`. You never need to edit it, and the lab only ever asks you to run the
-one command in [Part 2](../README.md#part-2--watch-the-connectors-change-feed).
+Reference for `producer/main.py`. You never need to edit it. Run it with the venv interpreter so it
+finds the SDK: `.venv/bin/python` on macOS/Linux, `.venv\Scripts\python.exe` on Windows.
 
-You never need to edit it. Run it with the venv interpreter so it finds the SDK:
-`.venv/bin/python` on macOS/Linux, `.venv\Scripts\python.exe` on Windows.
-
-You start it **once**, in Part 2, with both sources:
+[Part 2](../README.md#part-2--watch-the-connectors-change-feed) starts it once, with both sources:
 
 ```bash
 .venv/bin/python producer/main.py --profile producer/profile.json --cdc --telemetry
 ```
 
-That is the only command the lab asks you to run. Part 5's incident and recovery are triggered by
-writing to `MFG.RAW.SIMULATOR_CONTROL` while it keeps streaming.
+Part 5's incident and recovery are triggered by writing to `MFG.RAW.SIMULATOR_CONTROL` while it keeps
+streaming.
 
 ```bash
 # see what it generates, no Snowflake account needed

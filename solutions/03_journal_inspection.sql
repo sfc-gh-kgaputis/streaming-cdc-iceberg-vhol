@@ -8,11 +8,6 @@
 -- This file is what you use to LOOK at what it built and what it is doing:
 -- the change events, the three event shapes, how to read SF_METADATA, and above all
 -- the merge gate.
---
--- The DDL used to live here. It moved into the connector because having attendees
--- hand-build a CDC destination table taught the wrong division of labour: in
--- production nobody does that, you point the connector at a source and the objects
--- appear.
 -- =====================================================================
 
 USE ROLE ACCOUNTADMIN;
@@ -74,7 +69,7 @@ SELECT SF_METADATA                                          AS raw_variant,
 FROM MFG.RAW.QUALITY_INSPECTIONS_JOURNAL_1787700000_1
 LIMIT 3;
 
--- 4. THE MERGE GATE, which is the point of this section.
+-- 4. THE MERGE GATE.
 --    The journal always leads the destination. The gap is the scheduling gate,
 --    not a throughput limit -- the merge itself takes a second or two.
 SELECT (SELECT COUNT(*) FROM MFG.RAW.QUALITY_INSPECTIONS_JOURNAL_1787700000_1
@@ -88,8 +83,8 @@ SELECT (SELECT COUNT(*) FROM MFG.RAW.QUALITY_INSPECTIONS_JOURNAL_1787700000_1
                                                               AS stream_has_pending;
 
 -- 5. The merges themselves, found the way you would find them in production:
---    by the connector's QUERY_TAG. This is the payoff of the tag, and it is
---    exactly how you would audit a real Openflow deployment.
+--    by the connector's QUERY_TAG. Filter on the tag to audit any Openflow
+--    deployment.
 --
 --    Note the START_TIME of each one: second :00, every minute. That is the CRON
 --    eligibility gate. Note also TOTAL_ELAPSED_TIME -- a second or two. The

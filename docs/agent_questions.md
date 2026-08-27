@@ -1,13 +1,12 @@
 # Agent questions
 
-The three questions to ask the **Cascade Plant Analyst** agent, verbatim, in this order. They are also
-inline in the lab README at Parts 4 and 5 — this file exists so you can keep it open beside Snowsight
-instead of scrolling.
+The three questions to ask the **Cascade Plant Analyst**, verbatim, in this order. Keep this open
+beside Snowsight; they are also inline in the README at Parts 4 and 5.
 
 Ask them in the chat panel at **Snowsight → AI & ML → Agents → Cascade Plant Analyst**.
 
-Order matters. The first two establish that the agent reads your pipeline correctly. The third is the
-one that could not be answered without joining two data sources.
+Order matters: the first two establish that the agent reads your pipeline correctly, and the third
+needs both data sources at once.
 
 ---
 
@@ -18,10 +17,8 @@ one that could not be answered without joining two data sources.
 **Expect:** three lines — WELD, PAINT, ASSEMBLY — each around 95–99% in steady state, and the agent
 naming the 5-minute interval it used.
 
-**Why it is worth asking:** "right now" is ambiguous, and the agent has been instructed that it means
-the most recent complete buckets rather than the current clock time. A pipeline with a deliberate
-1–2 minute lag has no rows for the current minute, and an agent that does not know this reports
-misleading emptiness instead of the latest real numbers.
+"Right now" means the most recent complete buckets, not the current minute: a 1–2 minute target lag
+leaves the current minute empty.
 
 ## 2. Drill-down — can it get to the grain?
 
@@ -29,11 +26,10 @@ misleading emptiness instead of the latest real numbers.
 
 **Expect:** a ranked list of defect codes for PAINT, with `NONE` excluded.
 
-**Why it is worth asking:** `DEFECT_CODE = 'NONE'` means the scan *passed*. It is the most common value
-in the table and it is not a defect. An agent that includes it reports "the top defect is NONE",
-which is both true and useless — the kind of answer that looks like a working agent and is not.
+`DEFECT_CODE = 'NONE'` means the scan passed, and it is the most common value in the table. An agent
+that does not exclude it answers "the top defect is NONE".
 
-## 3. The payoff — can it find a cause?
+## 3. Cause — can it get past what happened to why?
 
 > Why did PAINT yield drop?
 
@@ -44,26 +40,14 @@ simulator control mode to `INCIDENT`. The producer keeps running throughout; you
 **order** right: humidity climbed first, defects followed. It should also note that WELD and ASSEMBLY
 were unaffected.
 
-**Why it is worth asking:** humidity comes from the Snowpipe Streaming telemetry feed. Defects and
-yield come from the CDC feed. Nothing in either source alone contains the answer. It exists only
-because `YIELD_BY_LINE_5MIN` joined them on line and 5-minute bucket in Part 3. An agent over the
-CDC feed alone can tell you *what* happened and never *why*.
+Humidity comes from the telemetry feed and yield from the CDC feed, so neither source alone contains
+this answer. It exists because `YIELD_BY_LINE_5MIN` joined them on line and 5-minute bucket in Part 3.
 
 ---
 
-## If the answers look wrong
-
-| What you see | What it means |
-|---|---|
-| An opaque `internal error`, code 391920 | The agent's Analyst tool has no warehouse. See Troubleshooting in the README. |
-| Numbers that do not match the semantic view | Ask again in a minute — the pipeline lags 1–2 min by design. |
-| "The top defect is NONE" | The agent is not excluding passed scans. Its orchestration instructions should say to. |
-| Confident cause with the sequence backwards | It found the correlation but not the ordering. Ask it which came first. |
-| A number that changed since your last question | Correct, and interesting. Inspectors overturn failed frames, which rewrites already-reported buckets. That is Part 5's recovery, not an error. |
-
 ## Worth trying if you have time
 
-These are not scripted. Watch how the agent copes with a question nobody built the pipeline for:
+Not scripted — watch how the agent copes with a question nobody built the pipeline for:
 
 > Should I stop the PAINT line?
 
@@ -71,5 +55,9 @@ These are not scripted. Watch how the agent copes with a question nobody built t
 
 > Is anything wrong on WELD?
 
-The honest answer to the last one is "no". An agent that manufactures a problem on a healthy line is
-telling you its instructions need work.
+The honest answer to the last one is "no". If the agent manufactures a problem on a healthy line,
+tighten its orchestration instructions.
+
+---
+
+Agent symptoms, causes and fixes are in [Troubleshooting](troubleshooting.md).

@@ -384,12 +384,12 @@ pipeline and a plausible-looking wrong one. Read for it.
 Create two Dynamic Iceberg Tables in MFG.ANALYTICS, target lag 1 minute,
 refresh mode INCREMENTAL.
 
-INSPECTIONS_ACTIVE: the business columns from MFG.RAW.QUALITY_INSPECTIONS, not the
-connector's bookkeeping columns, excluding rows it has soft-deleted, plus a
-per-row scrap flag.
+INSPECTIONS_ACTIVE: the business columns from MFG.RAW.QUALITY_INSPECTIONS, not
+the connector's bookkeeping columns, excluding rows it has soft-deleted, plus
+IS_SCRAP as 1 or 0.
 
-STATION_HEALTH: from MFG.RAW.STATION_TELEMETRY, one row per station, line,
-metric and 5-minute bucket, with the reading count, average and maximum.
+STATION_HEALTH: from MFG.RAW.STATION_TELEMETRY, one row per STATION_ID, LINE,
+METRIC and 5-minute BUCKET, with READINGS, AVG_VALUE and MAX_VALUE.
 ```
 
 `INSPECTIONS_ACTIVE` carries the predicate that matters: `WHERE NOT _SNOWFLAKE_DELETED`. A CDC
@@ -412,12 +412,12 @@ Read it rather than guessing.
 Create two more Dynamic Iceberg Tables in MFG.ANALYTICS, same lag and
 refresh mode.
 
-YIELD_BY_LINE_5MIN: units, scrap units and first-pass yield percent per line
-per 5-minute bucket from INSPECTIONS_ACTIVE, left joined to STATION_HEALTH on
-the same line and bucket to carry booth humidity.
+YIELD_BY_LINE_5MIN: per LINE and 5-minute BUCKET from INSPECTIONS_ACTIVE, give
+UNITS, SCRAP_UNITS and FIRST_PASS_YIELD_PCT rounded to 2 decimals; left join
+STATION_HEALTH on the same line and bucket for AVG_BOOTH_HUMIDITY.
 
-DEFECT_COUNTS_5MIN: a count per line, 5-minute bucket and defect code from
-INSPECTIONS_ACTIVE, with no-defect rows counted as NONE.
+DEFECT_COUNTS_5MIN: per LINE, 5-minute BUCKET and DEFECT_CODE from
+INSPECTIONS_ACTIVE, give N, counting no-defect rows as NONE.
 ```
 
 Yield and booth humidity land in the same row for the same 5-minute interval. That join is what makes the
@@ -433,6 +433,18 @@ Single-digit row counts are correct: three lines times the number of elapsed 5-m
 **Checkpoint:** all four Dynamic Tables now report `refresh_mode = INCREMENTAL`, and
 `YIELD_BY_LINE_5MIN` holds three rows per elapsed 5-minute bucket, single digits early on. It is
 much smaller than `QUALITY_INSPECTIONS`, as an aggregate should be.
+
+Parts 4, 5 and 6 address these columns by name, so confirm them before moving on:
+
+**Prompt:**
+
+```text
+Check the Dynamic Table column contract.
+```
+
+**Checkpoint:** every row reads `ok`. A `-- MISSING COLUMN --` or `-- WRONG TYPE --` names the table
+and column to fix; re-run the prompt above for that table, naming that column. Fixing it here costs a
+minute, and Part 4 would report the error against the semantic view instead of the table behind it.
 
 **Prompt:**
 

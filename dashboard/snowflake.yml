@@ -5,7 +5,7 @@ entities:
     identifier:
       name: PLANT_FLOOR_LIVE
       database: MFG
-      schema: CDC
+      schema: ANALYTICS
     query_warehouse: HOL_WH
     runtime_name: SYSTEM$ST_CONTAINER_RUNTIME_PY3_11
     compute_pool: SYSTEM_COMPUTE_POOL_CPU

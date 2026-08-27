@@ -158,8 +158,7 @@ def repair_profile(profile_path: str, verify: bool = True) -> dict[str, Any]:
             log("")
             log("[profile] WARNING: profile.json was wrong and has been REPAIRED IN PLACE.")
             log(f"[profile] WARNING: changed {label}.")
-            log("[profile] WARNING: Setup D produced a profile that could not authenticate.")
-            log("[profile] WARNING: worth reporting -- the lab should not need this.")
+            log("[profile] WARNING: re-run Setup D if the producer fails again.")
             log("")
             return candidate
 

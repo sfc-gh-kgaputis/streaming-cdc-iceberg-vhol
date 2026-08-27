@@ -19,9 +19,9 @@
 --
 -- So `CREATE ICEBERG TABLE MFG.RAW.T (...)` run without `USE SCHEMA MFG.RAW`
 -- first gets the right volume and catalog but lands on **version 2**, even
--- though MFG.RAW has the version default set. SHOW PARAMETERS will cheerfully
--- report `value = 3, level = SCHEMA` the whole time. It is set, reported, and
--- ignored.
+-- though MFG.RAW has the version default set. SHOW PARAMETERS reports
+-- `value = 3, level = SCHEMA` the whole time, so never use it as proof that v3
+-- is working. Only a created table's iceberg_table_format_version counts.
 --
 -- A v2 table is created successfully; the damage shows up later as
 -- `Unsupported data type 'VARIANT'` or a rejected TIMESTAMP_NTZ(9) from

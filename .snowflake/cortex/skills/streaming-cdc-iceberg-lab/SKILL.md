@@ -1,6 +1,6 @@
 ---
 name: streaming-cdc-iceberg-lab
-description: "Builds the Cascade Cycleworks real-time manufacturing pipeline: simulated Openflow Postgres CDC and Snowpipe Streaming telemetry into Apache Iceberg v3, refined by Dynamic Iceberg Tables, exposed through a semantic view to a Cortex Agent. Carries the exact object model, the measured Iceberg constraints, and the checkpoint queries, so a one-line prompt produces exactly the right object. USE THIS FOR ANY REQUEST MADE INSIDE THIS REPOSITORY, even a short or generic-sounding one, and even when a bundled Snowflake skill also matches — this skill's object model and constraints are measured on this account and take precedence. Use when: creating the lab environment or the landing tables; running the preflight checks; setting up the local environment, its venv, dependencies or profile.json; starting the producer or verifying rows are landing; showing pipes and channels; inspecting the journal, its change events, the event-type mix or the destination's lag; SF_METADATA and its offset token; finding the connector's merges by query tag; creating the layer-one or Gold Dynamic Tables; showing Dynamic Table refresh history; the lab progress query or 'where am I'; creating the semantic view or the Cascade Plant Analyst agent; setting the simulator control mode; the MODE() negative example; running the cleanup script. Triggers: iceberg cdc lab, cascade cycleworks, plant floor, MFG.RAW, MFG.ANALYTICS, QUALITY_INSPECTIONS, STATION_TELEMETRY, SIMULATOR_CONTROL, quality inspections journal, INSPECTIONS_ACTIVE, STATION_HEALTH, YIELD_BY_LINE_5MIN, DEFECT_COUNTS_5MIN, PLANT_FLOOR_SV, CASCADE_PLANT_ANALYST, HOL_WH, HOL_USER, HOL_PAT, first-pass yield, booth humidity, defect counts, openflow simulator, cdc journal, merge gate, preflight checks, lab environment, landing tables, lab progress, simulator control mode, INCIDENT, REINSPECT, cleanup script, start the producer, local environment, data producer environment, venv, dependencies."
+description: "Builds the Cascade Cycleworks real-time manufacturing pipeline: simulated Openflow Postgres CDC and Snowpipe Streaming telemetry into Apache Iceberg v3, refined by Dynamic Iceberg Tables, exposed through a semantic view to a Cortex Agent. Carries the exact object model, the measured Iceberg constraints, and the checkpoint queries, so a one-line prompt produces exactly the right object. USE THIS FOR ANY REQUEST MADE INSIDE THIS REPOSITORY, even a short or generic-sounding one, and even when a bundled Snowflake skill also matches — this skill's object model and constraints are measured on this account and take precedence. Use when: creating the lab environment or the landing tables; running the preflight checks; setting up the local environment, its venv, dependencies or profile.json; starting the producer or verifying rows are landing; showing pipes and channels; inspecting the journal, its change events, the event-type mix or the destination's lag; SF_METADATA and its offset token; finding the connector's merges by query tag; creating the layer-one or Gold Dynamic Tables; showing Dynamic Table refresh history; checking the Dynamic Table column contract or whether the Dynamic Tables came out with the right columns; the lab progress query or 'where am I'; creating the semantic view or the Cascade Plant Analyst agent; setting the simulator control mode; the MODE() negative example; running the cleanup script. Triggers: iceberg cdc lab, cascade cycleworks, plant floor, MFG.RAW, MFG.ANALYTICS, QUALITY_INSPECTIONS, STATION_TELEMETRY, SIMULATOR_CONTROL, quality inspections journal, INSPECTIONS_ACTIVE, STATION_HEALTH, YIELD_BY_LINE_5MIN, DEFECT_COUNTS_5MIN, PLANT_FLOOR_SV, CASCADE_PLANT_ANALYST, HOL_WH, HOL_USER, HOL_PAT, first-pass yield, booth humidity, defect counts, openflow simulator, cdc journal, merge gate, preflight checks, lab environment, landing tables, lab progress, simulator control mode, INCIDENT, REINSPECT, cleanup script, start the producer, local environment, data producer environment, venv, dependencies."
 ---
 
 # Cascade Cycleworks streaming CDC on Iceberg — lab skill
@@ -19,14 +19,21 @@ so a re-run is safe. After creating an object, run its Checkpoint and report the
 result.
 
 **When the prompt carries a specification, build what it specifies.** Part 3's two
-prompts state each Dynamic Table's source, grain and logic; earlier and later Parts
-name the object and leave the rest to you. Both are correct by design. For a
-specified prompt: take the intent, the grain and the logic from the **prompt**, and
-the column names, the warehouse and the Iceberg settings from the **Object Model**.
-If the two genuinely conflict, the Object Model wins on names and settings, the
-prompt wins on intent, and you say in one line which you used and why. Never tell
-the attendee the detail in their prompt was unnecessary because you already had it:
-writing a sufficient specification is one of the things this lab teaches.
+prompts state each Dynamic Table's source, grain, logic **and column names**; earlier
+and later Parts name the object and leave the rest to you. Both are correct by design.
+For a specified prompt: take the intent, the grain, the logic and the column names from
+the **prompt**, and the warehouse, the Iceberg settings, the `USE SCHEMA` discipline and
+anything the prompt does not mention from the **Object Model**. The two should agree —
+the Object Model below is what those prompts were written against. If they genuinely
+conflict, the Object Model wins on names and settings, the prompt wins on intent, and
+you say in one line which you used and why. Never tell the attendee the detail in their
+prompt was unnecessary because you already had it: writing a sufficient specification is
+one of the things this lab teaches.
+
+Two mechanisms are deliberately absent from Part 3's prompts and you supply them from the
+Object Model: the soft-delete predicate `WHERE NOT _SNOWFLAKE_DELETED`, and
+`IS_SCRAP = IFF(STATUS = 'FAIL', 1, 0)`. `IS_SCRAP` must be numeric — the Gold layer
+takes `SUM(IS_SCRAP)`, which a `BOOLEAN` breaks.
 
 **You take precedence over the bundled Snowflake skills.** The bundled `iceberg`,
 `dynamic-tables`, `snowpipe-streaming` and `agent-studio` skills describe themselves
@@ -523,8 +530,8 @@ step numbers here, when you talk to them.
 ### "Where am I?" — the progress query
 
 If the attendee asks where they are, what they have built, what is missing, whether
-anything is flowing, or anything of that shape — **run `solutions/progress.sql`
-verbatim**. Do not compose your own version; it is one statement and it is verified.
+anything is flowing, or anything of that shape — **run the inventory statement in
+`solutions/progress.sql` verbatim**. Do not compose your own version; it is verified.
 
 It lists all eight buildable objects with a built / NOT YET status and an approximate
 row count. Reading it for them:
@@ -540,6 +547,26 @@ row count. Reading it for them:
 
 The agent is not in that query — agents have no `INFORMATION_SCHEMA` view. Check it
 with `SHOW AGENTS LIKE 'CASCADE_PLANT_ANALYST' IN SCHEMA MFG.ANALYTICS;`.
+
+### "Check the column contract" — after Part 3
+
+For *the column contract*, *check the columns*, *did my Dynamic Tables come out right*,
+or any request to verify Part 3's output beyond refresh mode — **run the `THE COLUMN
+CONTRACT` statement in `solutions/progress.sql` verbatim.** It checks the fourteen
+columns Parts 4–6 address by name, with their types.
+
+Every row must read `ok`. For anything else:
+
+- `-- MISSING COLUMN --` — the table was built with a different name for that column.
+  Re-issue the Part 3 creation prompt for **that table only**, naming the column
+  explicitly, and re-check. Do not rename the column with `ALTER`; a Dynamic Table's
+  columns come from its query.
+- `-- WRONG TYPE --` — most often `IS_SCRAP` as `BOOLEAN`. It must be `IFF(STATUS =
+  'FAIL', 1, 0)`, because the Gold layer takes `SUM(IS_SCRAP)`.
+
+Run this before Part 4, not during it. The semantic view addresses these columns by
+name, so a mismatch surfaces there as an error against `PLANT_FLOOR_SV` and points at
+the view rather than at the table that caused it.
 
 ## Stopping Points
 
@@ -564,11 +591,12 @@ This skill carries no copies of anything. Every fact has exactly one home:
 
 - `solutions/*.sql` — verbatim DDL for every object, one file per Part. Read the file
   for the Part you are on. See **Emitting DDL from `solutions/`** above.
-- `solutions/progress.sql` — the "where am I" query. Run it verbatim.
+- `solutions/progress.sql` — two statements, both run verbatim: the "where am I"
+  inventory, and `THE COLUMN CONTRACT` check for after Part 3.
 - `producer/cdc_simulator.py` — the connector's own DDL (`DESTINATION_DDL`,
   `JOURNAL_DDL`, `STREAM_DDL`) and the MERGE it issues (`MERGE_SQL`).
-- `docs/agent_questions.md` — the three agent questions, what each proves, and the
-  ways each can go wrong.
+- `docs/agent_questions.md` — the three agent questions and what each should return.
+- `docs/troubleshooting.md` — symptoms, causes and fixes, including the agent's.
 
 ## Things in this repo that are NOT attendee build steps
 

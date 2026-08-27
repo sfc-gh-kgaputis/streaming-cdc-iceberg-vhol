@@ -27,6 +27,9 @@ Back to the walkthrough: [README](../README.md).
 | Agent answers with stale numbers | The pipeline lags 1–2 min by design | Ask again in a minute. "Right now" means the most recent complete buckets. |
 | Agent errors or lists no models | Cross-region inference disabled | See `cortex_ok` above. |
 | Agent: *"not an allowed model for Agent"* | A specific orchestration model was pinned | Use `"orchestration": "auto"`. Agent orchestration has a narrower allowed-models list than Cortex `COMPLETE`. |
+| Agent answers *"the top defect is NONE"* | It is not excluding passed scans. `DEFECT_CODE = 'NONE'` means the scan passed, and it is the most common value in the table | Add the exclusion to the agent's orchestration instructions and re-run `CREATE OR REPLACE AGENT`. |
+| Agent names the right cause but the sequence backwards | It found the correlation without the ordering | Ask it which came first. Humidity climbs before defects follow. |
+| A number changed since you last asked the same question | Correct, and interesting — inspectors overturn failed frames, which rewrites buckets already reported | Nothing to fix. That is Part 5's recovery. |
 | Part 6: `ModuleNotFoundError: No module named 'pyiceberg'` | The script ran on system Python, or Setup D installed only the producer's requirements | Run it with the venv interpreter, `.venv/bin/python external/read_iceberg.py`. If the import still fails, `.venv/bin/pip install -r external/requirements.txt`. |
 | External read: 401 with an empty body | A PAT presented directly as a Bearer token. It must be exchanged for an access token first | `external/read_iceberg.py` does the exchange. If you wrote your own, see the comments in it. |
 | External read: `OAuthError: unauthorized_client` | PyIceberg's `credential` property formats the request in a way Horizon rejects | Pass `token=<access_token>` instead. |

@@ -4,7 +4,7 @@ Read a Snowflake-managed Iceberg table from OUTSIDE Snowflake.
 Uses PyIceberg against the Horizon Catalog REST endpoint with vended credentials.
 
 Usage:  python external/read_iceberg.py [NAMESPACE.TABLE]
-Default table: CDC.YIELD_BY_LINE_5MIN   (database: MFG)
+Default table: ANALYTICS.YIELD_BY_LINE_5MIN   (database: MFG)
 Config: producer/profile.json + secret.pat (or env HORIZON_PAT)
 """
 import json
@@ -83,7 +83,7 @@ except Exception as e:
 # -- The "same bytes, no warehouse" proof --------------------------------------
 print(f"\nIceberg format : v{tbl.metadata.format_version}")
 print(f"Storage path   : {tbl.metadata.location}")
-# ^ will show  s3://sfc-...-customer-interop-fs-.../iceberg/MFG/CDC/...
+# ^ will show  s3://sfc-...-customer-interop-fs-.../iceberg/MFG/ANALYTICS/...
 # PyIceberg fetches Parquet files directly from that S3 path with vended creds.
 print("(PyIceberg read that path directly — no Snowflake warehouse involved.)\n")
 

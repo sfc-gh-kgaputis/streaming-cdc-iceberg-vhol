@@ -21,7 +21,7 @@
 -- generation increments on every source schema change. This lab PINS that
 -- suffix to 1787700000_1 on purpose, so every attendee has the same object
 -- name and the skill can reference it -- see the comment on JOURNAL_SERIES in
--- producer/cdc_simulator.py. Matching by prefix anyway, because that is the habit
+-- producer/common.py. Matching by prefix anyway, because that is the habit
 -- that survives contact with a real connector, where it is not predictable.
 -- It is also why you build Dynamic Tables on the destination table and never
 -- on the journal.
@@ -86,6 +86,57 @@ ORDER BY e.seq;
 -- Any table showing 'built' with 0 rows and no growth means the producer is
 -- not running, or is running without the flag for that feed.
 -- =====================================================================
+
+
+-- =====================================================================
+-- THE COLUMN CONTRACT
+-- =====================================================================
+-- Part 3's prompts name the columns the later Parts read. Part 4's semantic
+-- view, Part 5's agent and Part 6's external read all address them by name,
+-- so a Dynamic Table that refreshes INCREMENTAL with the right row count can
+-- still be wrong for them.
+--
+-- Run this after Part 3. It checks names and types together, because a
+-- BOOLEAN IS_SCRAP passes a name check and then breaks SUM() in the gold layer.
+-- =====================================================================
+
+WITH contract AS (
+    SELECT * FROM VALUES
+      ('INSPECTIONS_ACTIVE', 'IS_SCRAP',             'NUMBER'),
+      ('INSPECTIONS_ACTIVE', 'LINE',                 'TEXT'),
+      ('INSPECTIONS_ACTIVE', 'EVENT_TS',             'TIMESTAMP_NTZ'),
+      ('INSPECTIONS_ACTIVE', 'DEFECT_CODE',          'TEXT'),
+      ('STATION_HEALTH',     'BUCKET',               'TIMESTAMP_NTZ'),
+      ('STATION_HEALTH',     'AVG_VALUE',            'FLOAT'),
+      ('STATION_HEALTH',     'MAX_VALUE',            'FLOAT'),
+      ('STATION_HEALTH',     'METRIC',               'TEXT'),
+      ('YIELD_BY_LINE_5MIN', 'UNITS',                'NUMBER'),
+      ('YIELD_BY_LINE_5MIN', 'SCRAP_UNITS',          'NUMBER'),
+      ('YIELD_BY_LINE_5MIN', 'FIRST_PASS_YIELD_PCT', 'NUMBER'),
+      ('YIELD_BY_LINE_5MIN', 'AVG_BOOTH_HUMIDITY',   'FLOAT'),
+      ('DEFECT_COUNTS_5MIN', 'N',                    'NUMBER'),
+      ('DEFECT_COUNTS_5MIN', 'DEFECT_CODE',          'TEXT')
+      AS t(object_name, column_name, expected_type)
+)
+SELECT
+    k.object_name,
+    k.column_name,
+    k.expected_type,
+    COALESCE(c.data_type, '-- absent --')                   AS actual_type,
+    CASE WHEN c.column_name IS NULL           THEN '-- MISSING COLUMN --'
+         WHEN c.data_type <> k.expected_type  THEN '-- WRONG TYPE --'
+         ELSE 'ok' END                                      AS verdict
+FROM contract k
+LEFT JOIN MFG.INFORMATION_SCHEMA.COLUMNS c
+       ON c.table_schema = 'ANALYTICS'
+      AND c.table_name   = k.object_name
+      AND c.column_name  = k.column_name
+ORDER BY IFF(verdict = 'ok', 1, 0), k.object_name, k.column_name;
+
+-- Every row must read 'ok'. Anything else: re-run the Part 3 prompt for that
+-- table, naming the column it flagged, or run 04_dynamic_tables.sql.
+-- Fix it here rather than in Part 4 -- the semantic view names these columns
+-- and its error will point at the view, not at the table that caused it.
 
 -- A trailing real statement, deliberately: Snowsight parses text after the last
 -- statement as a statement, so a file ENDING in comments throws
