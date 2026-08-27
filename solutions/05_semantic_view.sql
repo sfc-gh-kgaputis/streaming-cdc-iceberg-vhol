@@ -86,7 +86,13 @@ CREATE OR REPLACE SEMANTIC VIEW MFG.ANALYTICS.PLANT_FLOOR_SV
       WITH SYNONYMS = ('units produced', 'total units', 'volume'),
     yield.total_scrap AS SUM(yield.scrap_units)
       WITH SYNONYMS = ('scrap', 'total scrap', 'rejects', 'failed units'),
-    yield.avg_yield_pct AS AVG(yield.yield_pct)
+    -- Weighted, not AVG(yield_pct). Averaging per-bucket percentages gives a
+    -- partial 20-unit bucket the same weight as a full 200-unit one, so the
+    -- metric contradicts TOTAL_UNITS and TOTAL_SCRAP in its own result row.
+    -- At a single bucket's grain the two are identical; they diverge only when
+    -- the agent aggregates across buckets, which is exactly what "right now"
+    -- and "the last thirty minutes" both do.
+    yield.avg_yield_pct AS ROUND(100 * (SUM(yield.units) - SUM(yield.scrap_units)) / NULLIF(SUM(yield.units), 0), 2)
       WITH SYNONYMS = ('average yield', 'yield percent', 'first pass yield percent'),
     yield.avg_humidity AS AVG(yield.booth_humidity)
       WITH SYNONYMS = ('humidity', 'average booth humidity'),
