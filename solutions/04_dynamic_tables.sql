@@ -19,9 +19,9 @@
 --     DEFECT_COUNTS_5MIN                        <- same source, defect grain
 --
 -- Every TIME_SLICE() below is cast to ::TIMESTAMP_NTZ(6). TIME_SLICE() returns
--- the same type as its input, and QUALITY_INSPECTIONS.EVENT_TS is scale 9 (a
--- standard table's default), which Iceberg v2 rejects; the cast costs nothing on
--- an all-v3 chain and keeps working if a schema default is ever missed.
+-- the same type as its input, and Iceberg stores timestamps at microsecond
+-- precision; the explicit cast costs nothing on an all-v3 chain and pins the Gold
+-- grain key to one declared scale whatever the base resolves to.
 --
 -- "Top defect" is a grain here, derived at read time, because MODE() cannot be
 -- used in a Dynamic Table. See the negative example at the end of this file.

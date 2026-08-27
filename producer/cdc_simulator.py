@@ -167,10 +167,11 @@ WHEN NOT MATCHED THEN
 # immune to the trap instead of demonstrating it. The one table that inherits --
 # and proves inheritance works -- is STATION_TELEMETRY, which the attendee creates.
 
-# Standard, not Iceberg, and deliberately so: this table takes UPDATEs and DELETEs
-# continuously, which is the entire point of a change feed.
+# Iceberg v3, like everything else this lab lands. It takes UPDATEs and DELETEs
+# continuously, which is the entire point of a change feed, and the Dynamic Tables
+# over it still refresh INCREMENTALly.
 DESTINATION_DDL = f"""
-CREATE TABLE IF NOT EXISTS {SCANS_TABLE} (
+CREATE ICEBERG TABLE IF NOT EXISTS {SCANS_TABLE} (
   INSPECTION_ID           STRING,          -- replication key (the Postgres PK)
   UNIT_ID                 STRING,
   LINE                    STRING,          -- WELD | PAINT | ASSEMBLY
@@ -185,6 +186,10 @@ CREATE TABLE IF NOT EXISTS {SCANS_TABLE} (
   _SNOWFLAKE_UPDATED_AT   TIMESTAMP_NTZ,   -- connector-maintained
   _SNOWFLAKE_DELETED      BOOLEAN          -- connector-maintained SOFT delete
 )
+  EXTERNAL_VOLUME = 'SNOWFLAKE_MANAGED'
+  CATALOG = 'SNOWFLAKE'
+  ICEBERG_VERSION = 3
+  ERROR_LOGGING = TRUE
 """
 
 JOURNAL_DDL = f"""

@@ -105,7 +105,7 @@ v2 must be recreated. Run the preflight after creating tables and before buildin
 
 ## Object Model
 
-### `MFG.RAW.QUALITY_INSPECTIONS` — standard table, the CDC destination
+### `MFG.RAW.QUALITY_INSPECTIONS` — Iceberg v3, the CDC destination
 
 Deliberately **not** Iceberg: it takes UPDATEs and DELETEs continuously, which is what a
 change feed does to its destination.

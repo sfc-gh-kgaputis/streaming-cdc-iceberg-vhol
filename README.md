@@ -10,7 +10,7 @@ and an **AI agent** explains what is happening on the plant floor. You build it 
 
 You leave with one open lakehouse: governed by Snowflake, readable by any engine that speaks Iceberg.
 
-![Two feeds land in Snowflake-managed Apache Iceberg v3 tables, both over Snowpipe Streaming. Station telemetry streams straight into the STATION_TELEMETRY Iceberg table. In parallel, a simulated Openflow Postgres CDC connector appends change events to the QUALITY_INSPECTIONS_JOURNAL Iceberg table, and an APPEND_ONLY stream on that journal feeds a MERGE the connector issues itself on a one-minute gate, maintaining the QUALITY_INSPECTIONS destination table with soft deletes. Four Dynamic Iceberg Tables refine both feeds incrementally on a one-minute target lag: STATION_HEALTH rolls up telemetry and INSPECTIONS_ACTIVE filters soft-deleted rows, then YIELD_BY_LINE_5MIN joins those two on line and five-minute bucket while DEFECT_COUNTS_5MIN counts defects at their natural grain. The semantic view PLANT_FLOOR_SV sits over three tables — YIELD_BY_LINE_5MIN, DEFECT_COUNTS_5MIN and STATION_HEALTH, which reaches the view directly as well as through the join — and a Cortex Agent answers questions through that view. Outside Snowflake, PyIceberg on your laptop reads the same gold Iceberg tables through the Horizon Catalog with vended credentials, using no warehouse.](docs/architecture.svg)
+![Two feeds land in Snowflake-managed Apache Iceberg v3 tables, both over Snowpipe Streaming. Station telemetry streams straight into the STATION_TELEMETRY Iceberg table. In parallel, a simulated Openflow Postgres CDC connector appends change events to the QUALITY_INSPECTIONS_JOURNAL Iceberg table, and an APPEND_ONLY stream on that journal feeds a MERGE the connector issues itself on a one-minute gate, maintaining the QUALITY_INSPECTIONS destination table with soft deletes, itself Iceberg v3 like every other table here. Four Dynamic Iceberg Tables refine both feeds incrementally on a one-minute target lag: STATION_HEALTH rolls up telemetry and INSPECTIONS_ACTIVE filters soft-deleted rows, then YIELD_BY_LINE_5MIN joins those two on line and five-minute bucket while DEFECT_COUNTS_5MIN counts defects at their natural grain. The semantic view PLANT_FLOOR_SV sits over three tables — YIELD_BY_LINE_5MIN, DEFECT_COUNTS_5MIN and STATION_HEALTH, which reaches the view directly as well as through the join — and a Cortex Agent answers questions through that view. A Streamlit dashboard reads YIELD_BY_LINE_5MIN and DEFECT_COUNTS_5MIN directly rather than through the view. Outside Snowflake, PyIceberg on your laptop reads the same gold Iceberg tables through the Horizon Catalog with vended credentials, using no warehouse.](docs/architecture.svg)
 
 ## The scenario
 
@@ -331,11 +331,6 @@ targets and says so:
 Those three lines print whether the connector created the objects or found them already there. A managed
 connector provisions its own destination tables; a streaming client does not, which is why you wrote
 `STATION_TELEMETRY` yourself and not these three.
-
-The destination table it just built is a **standard** table, not Iceberg, while its journal is Iceberg v3.
-That is the connector's default — it writes standard destinations unless you opt into an Iceberg
-destination format — and this lab keeps the default so you can watch a table being rewritten in place.
-Everything downstream of it is Iceberg.
 
 **Start it once and leave it running for the rest of the lab.** You never stop or restart it; Part 5
 changes the data at the source instead.
