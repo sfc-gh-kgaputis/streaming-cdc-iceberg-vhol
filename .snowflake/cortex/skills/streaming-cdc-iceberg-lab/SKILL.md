@@ -212,11 +212,12 @@ PyIceberg for Part 6, installed now because nothing may install during the sessi
 `<venv-python> -c "import pyiceberg, snowflake.connector"` before calling Setup D done.
 
 Then **verify** the attendee's `profile.json` in the repo root. **You do not create it** — they write
-it in Setup B from `profile.example.json`, because the token is theirs and must not pass through
-chat. Check it **inside a shell command** (e.g. a `python3 -c` one-liner) so the token is never
+it in Setup B from `profile.example.json`, because the PAT is theirs and must not pass through
+chat. Check it **inside a shell command** (e.g. a `python3 -c` one-liner) so secrets are never
 printed and never read into your context: confirm the file parses as JSON, that `user` is
-`HOL_USER`, and that neither `MYORG` nor `PASTE_YOUR` survives anywhere in it. Report only which
-check failed, never a value. If it is missing, ask the attendee to do Setup B step 3.
+`HOL_USER`, that `personal_access_token` is non-empty (this is the field the producer reads —
+not `token`), and that neither `MYORG` nor `PASTE_YOUR` survives anywhere in it. Report only
+which check failed, never a value. If it is missing, ask the attendee to do Setup B step 3.
 
 `url` may be empty; the producer derives it from `account` on first run and writes it back. Do not
 fill it yourself, and **do not "fix" `account` from the `cortex` CLI or `snowflake_connections_list`**
