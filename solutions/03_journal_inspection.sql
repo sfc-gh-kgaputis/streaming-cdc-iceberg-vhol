@@ -19,24 +19,11 @@ USE SCHEMA MFG.RAW;
 -- =====================================================================
 -- The producer issues this statement on its CRON gate, exactly as the connector
 -- does, with the connector's QUERY_TAG set so you can find it in QUERY_HISTORY.
+-- You never run it yourself.
 --
--- The statement itself lives in producer/cdc_simulator.py, as MERGE_SQL. Read it
--- there rather than here: that is the copy that actually runs, so it cannot be
--- out of date.
---
--- Invariants it preserves, all of which matter:
---   1. Read the STREAM, not the journal table. Consuming the stream inside a
---      committed statement is what advances the offset. That is what makes it
---      exactly-once.
---   2. Dedup to ONE row per replication key, ordered by the LSN tuple DESC.
---      Without this, an insert-then-update in the same batch applies in
---      arbitrary order.
---   3. Soft delete only -- never DELETE FROM the destination.
---   4. The ON clause joins SOURCE.PRIMARY_KEY__<k> to TARGET.<k>, prefix stripped.
---   5. The INSERT branch falls back to PRIMARY_KEY__ for delete tombstones,
---      because a DELETE event carries no payload at all.
---
--- You do not need to run it yourself -- the producer does, once a minute.
+-- The statement lives in producer/cdc_simulator.py, as MERGE_SQL. Read it there
+-- rather than here: that is the copy that actually runs. The five invariants
+-- that make it correct are in docs/cdc-internals.md, "What the MERGE guarantees".
 
 
 -- =====================================================================

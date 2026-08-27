@@ -51,7 +51,23 @@ issues the MERGE itself over its own connection, on a CRON eligibility gate — 
 minute by default. The producer does the same thing on the same gate.
 
 So the journal always leads the destination, by up to a minute's worth of change events. That gap is a
-schedule you chose, not a throughput limit.
+schedule you chose, not a throughput limit. The merge itself takes a second or two.
+
+## What the MERGE guarantees
+
+The statement lives in [`producer/cdc_simulator.py`](../producer/cdc_simulator.py) as `MERGE_SQL`. Read
+it there — that is the copy that runs, so it cannot be out of date. Five invariants make it correct, and
+each one is a way a hand-written CDC merge goes wrong:
+
+| # | Invariant | Why it matters |
+|---|---|---|
+| 1 | Read the **stream**, not the journal table | Consuming the stream inside a committed statement is what advances its offset. That is what makes the merge exactly-once. |
+| 2 | Dedup to **one row per replication key**, ordered by the LSN tuple `DESC` | Without it, an insert-then-update arriving in the same batch applies in arbitrary order. |
+| 3 | **Soft delete only** — never `DELETE FROM` the destination | Retracted rows stay, marked. See *Soft deletes* above. |
+| 4 | Join `SOURCE.PRIMARY_KEY__<k>` to `TARGET.<k>`, prefix stripped | The journal prefixes key columns; the destination does not. |
+| 5 | The `INSERT` branch falls back to `PRIMARY_KEY__` | A delete event carries no payload at all, so the key column is the only source for the row's identity. |
+
+You never run it yourself. The producer does, once a minute.
 
 ## `SF_METADATA` holds a string, not an object
 

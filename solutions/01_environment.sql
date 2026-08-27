@@ -4,9 +4,9 @@
 -- You build this by PROMPTING Cortex Code. This file is what it should
 -- produce. Use it to check your work, or to catch up if you fall behind.
 --
--- The storage defaults below are the most load-bearing statements in the whole
--- lab. They make Iceberg tables resolve to Snowflake-managed storage at format
--- version 3 without any table-level clauses.
+-- The storage defaults below make Iceberg tables resolve to Snowflake-managed
+-- storage at format version 3 with no table-level clauses. Set them before
+-- creating any table.
 --
 -- READ THIS, IT IS NOT WHAT YOU EXPECT (measured 26 Aug 2026):
 --
@@ -25,19 +25,9 @@
 --
 -- A v2 table is created successfully; the damage shows up later as
 -- `Unsupported data type 'VARIANT'` or a rejected TIMESTAMP_NTZ(9) from
--- TIME_SLICE(), deep in the pipeline where the cause is invisible.
---
--- The Dynamic Tables in Part 3 are immune to the SESSION half of this -- they
--- read the schema they are created in. But CREATE DYNAMIC ICEBERG TABLE has no
--- ICEBERG_VERSION clause at all, so they have no per-statement override either:
--- their format version is whatever MFG.ANALYTICS says and nothing else. That is
--- why the defaults below are set on ANALYTICS too, and why 02_preflight.sql
--- checks both schemas.
---
--- Hence three layers of defence:
---   1. USE SCHEMA before every plain Iceberg create  <- fixes the session half
---   2. the defaults on BOTH schemas                  <- fixes the target half
---   3. an explicit ICEBERG_VERSION = 3 wherever the syntax allows one
+-- TIME_SLICE(), deep in the pipeline where the cause is invisible. So:
+-- USE SCHEMA before every plain Iceberg create, and set the defaults on BOTH
+-- schemas. 02_preflight.sql checks the result rather than trusting it.
 -- =====================================================================
 
 USE ROLE ACCOUNTADMIN;
@@ -77,14 +67,13 @@ USE SCHEMA MFG.RAW;
 -- ---------------------------------------------------------------------
 -- The CDC destination table is NOT created here.
 --
--- MFG.RAW.QUALITY_INSPECTIONS, the change journal and the journal stream all
--- belong to the connector, and it creates them itself on first run -- see
--- producer/cdc_simulator.py, ensure_objects(). That is what a real Openflow
--- connector does: you point it at a source and the objects appear.
+-- MFG.RAW.QUALITY_INSPECTIONS, the change journal and the journal stream belong
+-- to the connector, and it creates all three itself on first run -- see
+-- producer/cdc_simulator.py, ensure_objects().
 --
--- What stays here is what the connector does NOT own: the database, the schemas
--- and their Iceberg defaults, the warehouse, the telemetry table the attendee
--- streams into directly, and the simulator's control plane.
+-- What stays here is what the connector does not own: the database, the schemas
+-- and their Iceberg defaults, the warehouse, the telemetry table you stream
+-- into directly, and the simulator's control plane.
 -- ---------------------------------------------------------------------
 
 -- ---------------------------------------------------------------------
@@ -92,16 +81,10 @@ USE SCHEMA MFG.RAW;
 --
 -- This is how you change the WORLD in Part 5 without touching the pipeline.
 -- You write a row here; the running producer notices within ~10 seconds and
--- the plant floor starts behaving differently. Streaming never stops.
+-- the plant floor starts behaving differently. Streaming never stops, which is
+-- how a real connector behaves: an incident changes the data at the source.
 --
--- That is not a lab shortcut, it is what the real thing looks like. An
--- Openflow connector runs continuously. When a paint booth starts misbehaving
--- nobody restarts the connector -- the data changes character at the source and
--- the pipeline carries it through unchanged.
---
--- Deliberately a STANDARD table: it is operational metadata, not a feed and not
--- derived from one. Making it Iceberg would buy nothing and would add one more
--- schema where the ICEBERG_VERSION_DEFAULT session trap could bite.
+-- A STANDARD table, not Iceberg: it is operational metadata, not a feed.
 -- ---------------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS MFG.RAW.SIMULATOR_CONTROL (
   MODE        STRING,          -- STEADY | INCIDENT | REINSPECT
