@@ -106,8 +106,12 @@ ALTER SCHEMA MFG.RAW SET ICEBERG_VERSION_DEFAULT = 3;
 ```
 
 **HARD RULE: issue `USE SCHEMA MFG.RAW;` (or `MFG.ANALYTICS`) immediately before every
-Iceberg `CREATE`.** This is not stylistic. Measured 26 Aug 2026, re-measured with a
-controlled single-session test 26 Aug:
+Iceberg `CREATE`.** This is not stylistic. It rests on a **measurement, not on
+documentation**: taken 26 Aug 2026 and re-taken the same day with a controlled
+single-session test. The docs describe *symmetric* inheritance for all three parameters
+("defaults to the … for the schema, database, or account") and say nothing about a
+session dependency, so this behaviour is undocumented and could change. Keep the rule
+regardless — it costs nothing and it is correct either way.
 
 - `EXTERNAL_VOLUME` and `CATALOG` always resolve from the schema that **contains** the
   new table, for both `CREATE` forms.
@@ -233,8 +237,11 @@ stream `..._STREAM`.
 **There is no task, and you must not create one.** The Openflow connector does not
 create a Snowflake `TASK` — verified against the connector source. Its merge processor
 runs inside the connector runtime and issues the MERGE itself over its own Snowflake
-connection, with a CRON expression acting as an internal *eligibility gate* (flow
-default `0 * * * * ?`, second :00 of every minute). In this lab the **producer** issues
+connection, with a CRON expression acting as an internal *eligibility gate* — the
+connector's `Merge Task Schedule CRON` parameter. This lab runs a **one-minute** gate
+(second :00 of every minute), which is the kind of schedule you would set with that
+parameter; the docs do not state a shipped default, and they describe `* * * * * ?`
+(merge continuously) as the value to return to. In this lab the **producer** issues
 the MERGE the same way, on the same gate. If an attendee asks you to schedule the merge,
 explain that a task would misrepresent how the product works.
 
@@ -340,7 +347,7 @@ is nothing that can drift out of sync. Read the file, then:
 | 8 | `APPROX_PERCENTILE` forces a FULL refresh. Avoid it. |
 | 9 | Pin `TARGET_LAG` on every layer. `DOWNSTREAM` inherits from the consumer, so a "1 minute" pipeline can silently run at the consumer's lag. |
 | 10 | Snowpipe Streaming + Iceberg: no partitioned tables, no schema evolution, no length-constrained VARCHAR. |
-| 11 | Telemetry visibility on a streaming Iceberg target is **~30 s**, not instant, while Snowflake sizes Parquet files. Observed on this account. **Do not attribute this to `MAX_CLIENT_LAG`** — that is a Snowpipe Streaming *Classic* property and this lab runs the HP/SSv2 SDK. The number is the measurement; the mechanism is not established. |
+| 11 | Telemetry visibility on a streaming Iceberg target is **~30 s**, not instant. Observed on this account; state it as a measurement and name no mechanism. **Do not attribute it to `MAX_CLIENT_LAG`** (a Snowpipe Streaming *Classic* property — this lab runs the HP/SSv2 SDK) and **do not attribute it to Parquet file sizing**, which is the Classic documentation's rationale, not the HP one. HP docs advertise "as low as 5 seconds" and say nothing Iceberg-specific. |
 | 12 | Dynamic Iceberg tables: no `IF NOT EXISTS`, no `ALTER DYNAMIC ICEBERG TABLE`, `CATALOG` must be `'SNOWFLAKE'`, no backfill. |
 
 ## Workflow

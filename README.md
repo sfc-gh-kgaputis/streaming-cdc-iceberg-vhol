@@ -347,8 +347,9 @@ of scans per second, so expect telemetry in the tens of thousands while the jour
 thousands. That ratio is correct, not a fault.
 
 **Checkpoint:** journal events, destination rows and telemetry rows all climb when you re-run the
-query. Telemetry lag is **~30 seconds**, which is what a streaming Iceberg target does while Snowflake
-sizes Parquet files sensibly. Expected, not a fault.
+query. Telemetry lag is **~30 seconds** on this account, measured. Expected, not a fault — and worth
+knowing as a planning number, because it is the floor under the CDC path too: lowering the merge gate
+below it buys you nothing.
 
 ### While that first 30 seconds passes
 

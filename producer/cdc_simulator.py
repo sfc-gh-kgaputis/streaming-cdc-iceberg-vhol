@@ -691,9 +691,12 @@ def merge_loop(sink: JournalSink, gate_seconds: float) -> None:
     """The connector's merge control loop.
 
     The processor itself is timer-driven and continuous; a CRON expression acts
-    as an *eligibility gate* deciding when queued changes become mergeable. The
-    flow default is `0 * * * * ?` -- second :00 of every minute -- so changes
-    queue for up to a minute before a merge picks them up. That gate, not
+    as an *eligibility gate* deciding when queued changes become mergeable -- the
+    connector's `Merge Task Schedule CRON` parameter. This lab uses a one-minute
+    gate (`0 * * * * ?`, second :00 of every minute), so changes queue for up to a
+    minute before a merge picks them up. The Openflow docs state no shipped default
+    and treat `* * * * * ?` (continuous) as the value to return to, so treat the
+    one minute as this lab's choice rather than the product's. That gate, not
     throughput, is where the CDC latency in this lab comes from: the merge itself
     takes a second or two.
 
