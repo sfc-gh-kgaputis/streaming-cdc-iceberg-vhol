@@ -328,6 +328,11 @@ is nothing that can drift out of sync. Read the file, then:
 - **Never emit a commented-out block.** Two exist deliberately: the reference MERGE in
   `03_journal_inspection.sql` (the producer issues that itself) and the `MODE()`
   negative example in `04_dynamic_tables.sql` (that is Optional B, and only if asked).
+- **Optional C — pricing the soft-delete predicate.** Read-only. Count
+  `MFG.RAW.QUALITY_INSPECTIONS` with and without `NOT _SNOWFLAKE_DELETED`, and compute
+  yield each way, so the difference is a number rather than an assertion. Frame the result
+  as permanent rather than transient: a voided scan stays in the table, so a pipeline
+  missing that predicate is wrong for good and nothing in the data reports it.
 - **Generate the DDL — do not tell the attendee to run the file instead.** The lab is
   built by prompting. `solutions/` is theirs to fall back on if they choose; it is not
   your shortcut.

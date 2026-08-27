@@ -39,7 +39,8 @@ somebody needs a metric sooner than they are getting it.
   `INCREMENTAL` while the tables underneath them are rewritten continuously.
 - **A late-arriving correction restates an aggregate that already reported.** One wrong predicate
   silently corrupts a metric for ever; the right one lets history be revised. An append-only pipeline
-  cannot do this. Here: yield rises for a 5-minute bucket that had already closed.
+  cannot do this. Here: yield rises for a 5-minute bucket that had already closed — and
+  [Optional C](#optional-c--price-the-predicate) puts a number on what the wrong predicate would cost.
 - **A [semantic view](https://docs.snowflake.com/en/user-guide/views-semantic/overview) makes a table
   answerable in plain language, and a second source makes the answer causal.** One feed tells you *what*
   happened, never *why*. Here: the agent ties a sensor drift to a defect spike and gets the order right.
@@ -101,7 +102,7 @@ Everything here is **pre-work**. Nothing installs during the session.
 | [Part 4](#part-4--ask-it-questions-in-english) | Semantic view, then a Cortex Agent over it |
 | [Part 5](#part-5--the-incident-and-the-recovery) | An incident, then a correction that rewrites history |
 | [Part 6](#part-6--read-it-from-your-laptop) | Read the same tables with PyIceberg, no warehouse |
-| [Optional A](#optional-a--look-inside-the-connector) · [Optional B](#optional-b--break-it-on-purpose) | Connector internals; a deliberate failure |
+| [Optional A](#optional-a--look-inside-the-connector) · [B](#optional-b--break-it-on-purpose) · [C](#optional-c--price-the-predicate) | Connector internals; a deliberate failure; the cost of one predicate |
 | [Troubleshooting](docs/troubleshooting.md) | Symptoms, causes and fixes, grouped by Part |
 | [Cleanup](#cleanup) | Stop the spend. Do not skip it. |
 
@@ -674,6 +675,23 @@ Add a top-defect column to DEFECT_COUNTS_5MIN using MODE(DEFECT_CODE).
 **Checkpoint:** it fails at `CREATE` time, not at refresh time:
 *"Change tracking is not supported on queries containing the function 'MODE'"*. That is why defects are
 counted at their natural grain and ranked at read time instead.
+
+## Optional C — Price the predicate
+
+`INSPECTIONS_ACTIVE` excludes rows the connector soft-deleted. Read-only, thirty seconds, and it turns
+that one-line predicate into a number.
+
+**Prompt:**
+
+```text
+Show me what yield would report if INSPECTIONS_ACTIVE did not filter soft-deleted rows:
+count QUALITY_INSPECTIONS with and without the predicate, and the yield each way.
+```
+
+**Checkpoint:** the two row counts differ, and so do the two yields. The gap is small and it never
+closes — a voided scan stays in the table forever, so a pipeline built without that predicate is not
+briefly wrong, it is permanently wrong by a margin that depends on how much your operators void. Nothing
+in the data tells you it happened.
 
 ---
 
