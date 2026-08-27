@@ -11,7 +11,10 @@ Runs on a warehouse runtime: no compute pool. environment.yml pins Streamlit, an
 pin is load-bearing — a warehouse runtime does not resolve the newest version it
 supports, and this app needs st.fragment (1.37+) and horizontal containers (1.49+).
 Reads MFG.ANALYTICS.YIELD_BY_LINE_5MIN and DEFECT_COUNTS_5MIN by column name,
-so run the Part 3 column contract before deploying it.
+so run the Part 3 column contract before deploying it. Also reads Dynamic Table
+refresh metadata from MFG.INFORMATION_SCHEMA to show actual Gold lag in seconds
+next to the app's own refresh time; that read addresses no table columns, so it
+is not part of the column contract.
 """
 
 from __future__ import annotations
@@ -71,6 +74,42 @@ def _fetch_defects(session) -> pd.DataFrame:
     """).to_pandas()
     df.columns = [c.lower() for c in df.columns]
     return df
+
+
+def _fetch_gold_lag(session) -> int | None:
+    """Actual lag of the two Gold tables this app reads, in seconds.
+
+    `DATA_TIMESTAMP` is the transactional point in time a refresh was evaluated:
+    all base-table data that arrived before it is included in the Dynamic Table.
+    So `CURRENT_TIMESTAMP() - DATA_TIMESTAMP` is what Snowflake's own health check
+    calls actual lag.
+
+    This is NOT the age of the newest 5-minute bucket. `BUCKET` is a TIME_SLICE
+    floor, so bucket age carries up to five minutes of bucketing on top of the
+    real lag, and reads as ~1-7 min where the lag is ~30-90 s.
+
+    Per-table MAX first, then the worse of the two -- one flat aggregate over the
+    history rows would return the oldest refresh on record instead of the newest.
+
+    Uses the INFORMATION_SCHEMA table function, never
+    SNOWFLAKE.ACCOUNT_USAGE.DYNAMIC_TABLE_REFRESH_HISTORY, whose latency is up to
+    three hours and which would report a stale number on a live dashboard.
+    """
+    rows = session.sql("""
+        WITH latest AS (
+            SELECT NAME, MAX(DATA_TIMESTAMP) AS DATA_TS
+            FROM TABLE(MFG.INFORMATION_SCHEMA.DYNAMIC_TABLE_REFRESH_HISTORY(
+                         NAME_PREFIX => 'MFG.ANALYTICS.'))
+            WHERE STATE = 'SUCCEEDED'
+              AND NAME IN ('YIELD_BY_LINE_5MIN', 'DEFECT_COUNTS_5MIN')
+            GROUP BY NAME
+        )
+        SELECT MAX(DATEDIFF('second', DATA_TS, CURRENT_TIMESTAMP())) AS LAG_SECS
+        FROM latest
+    """).collect()
+    if not rows or rows[0]["LAG_SECS"] is None:
+        return None
+    return int(rows[0]["LAG_SECS"])
 
 
 # ---------------------------------------------------------------------------
@@ -215,7 +254,20 @@ def live_dashboard() -> None:
         f"auto-refreshing every {REFRESH_SECS} s" if auto_on
         else "auto-refresh disabled"
     )
-    st.caption(f"Last refresh: {now}  ·  {mode}  ·  Streamlit in Snowflake")
+
+    # Freshness is a separate fact from when the app last drew itself, which is why
+    # the two sit side by side. Never let it break the dashboard: it is metadata
+    # about the pipeline, not the pipeline.
+    try:
+        lag_secs = _fetch_gold_lag(session)
+    except Exception:  # noqa: BLE001
+        lag_secs = None
+    lag_txt = f"{lag_secs} s" if lag_secs is not None else "—"
+
+    st.caption(
+        f"App refresh: {now}  ·  Gold lag: {lag_txt}  ·  {mode}  ·  "
+        "Streamlit in Snowflake"
+    )
 
     if yield_df.empty:
         st.info(

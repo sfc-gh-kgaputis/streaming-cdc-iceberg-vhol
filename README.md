@@ -554,6 +554,13 @@ every 30 seconds; **Auto-refresh** turns that off and **Refresh now** re-queries
 humidity dashed on the right. An empty defect panel is correct at this point — nothing has failed in
 the last 15 minutes yet.
 
+The caption carries two different clocks. **App refresh** is when the page last drew itself. **Gold
+lag** is how far behind the source your Gold tables actually are, in **seconds** — Snowflake reports
+it per Dynamic Table as `CURRENT_TIMESTAMP()` minus the `DATA_TIMESTAMP` of its last refresh, the point
+in time up to which all base-table data is included. Expect roughly **30–90 s** against a
+`TARGET_LAG` of one minute. It is not the age of the newest 5-minute bucket, which runs several
+minutes older because `TIME_SLICE` floors each bucket to its start.
+
 Now cause an incident. The producer is still running from Part 2, and it stays running. What changes is
 the **plant**, not the pipeline. You write a row to a control table and the running simulator picks it up
 within about ten seconds:
