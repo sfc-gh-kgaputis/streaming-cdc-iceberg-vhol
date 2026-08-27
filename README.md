@@ -281,8 +281,8 @@ than the shape of the feeds.
    into. Watch for one above the telemetry table.
 
 Confirm the version on the created table itself, with `iceberg_table_format_version`. The preflight
-below does that for every object. If something lands on v2, recreate it: Iceberg has no in-place
-v2 → v3 upgrade. [Troubleshooting](#troubleshooting) has the details.
+below does that for every object. If something lands on v2, recreate it.
+[Troubleshooting](#troubleshooting) has the details.
 
 Notice what the telemetry table's DDL does **not** contain: no `CATALOG`, no `EXTERNAL_VOLUME`, no
 version. It inherits all three, and the preflight is about to prove it did.
@@ -304,8 +304,8 @@ Run the preflight checks.
 
 **Checkpoint:** `aws_ok`, `cortex_ok`, `raw_iceberg_ok` and `analytics_iceberg_ok` all come back TRUE, every
 Iceberg object reports `is_v3 = TRUE`, and the stream reports `mode = APPEND_ONLY`.
-**Do not continue past a FALSE.** See [Troubleshooting](#troubleshooting). There is no in-place
-v2 → v3 upgrade, so a wrong answer here gets more expensive with every Part.
+**Do not continue past a FALSE.** See [Troubleshooting](#troubleshooting). A wrong answer here gets
+more expensive with every Part, so fix it now rather than after the next one.
 
 ## Part 2 — Watch the connector's change feed
 
@@ -367,8 +367,8 @@ of scans per second, so expect telemetry in the tens of thousands while the jour
 thousands. That ratio is correct, not a fault.
 
 **Checkpoint:** journal events, destination rows and telemetry rows all climb when you re-run the
-query. Telemetry lag is **~30 seconds**. That is `MAX_CLIENT_LAG`, which defaults to 30 s for Iceberg
-targets so Snowflake can size Parquet files sensibly. Expected, not a fault.
+query. Telemetry lag is **~30 seconds**, which is what a streaming Iceberg target does while Snowflake
+sizes Parquet files sensibly. Expected, not a fault.
 
 ### While that first 30 seconds passes
 
@@ -487,6 +487,21 @@ Show me the refresh history for these Dynamic Tables.
 **Checkpoint:** the per-refresh row counts stay small even as the base table grows. Snowflake is
 recomputing only the 5-minute groups that changed, while the source underneath is being UPDATEd and
 DELETEd continuously by the connector's merges.
+
+**This beat is Snowflake's own `dynamic-tables` skill doing the work, not the lab's.** Refresh history,
+`refresh_mode_reason` and the rules for what keeps a query incremental are properties of the *query*, so
+they read the same whether the table is Iceberg or not. Name it directly if you want to see a bundled
+skill answer on its own:
+
+**Prompt:**
+
+```text
+$dynamic-tables Why is this refresh incremental, and what would break it?
+```
+
+Two skills are in play by now and they cover different ground: the bundled one knows Dynamic Tables in
+general, and the lab's knows this pipeline's names and Iceberg settings. That is the same split you get
+on your own stack once you write one.
 
 ### Where am I?
 
@@ -698,7 +713,7 @@ counted at their natural grain and ranked at read time instead.
 
 | Symptom | Cause | Fix |
 |---|---|---|
-| `raw_iceberg_ok` or `analytics_iceberg_ok` is FALSE, or an object reports v2 | Your session's current schema was not one that resolves `ICEBERG_VERSION_DEFAULT = 3` when the table was created | Re-run `01_environment.sql` — it sets the database-level default and issues `USE SCHEMA` before each create. Then **recreate** any v2 table: Iceberg has no in-place v2 → v3 upgrade. |
+| `raw_iceberg_ok` or `analytics_iceberg_ok` is FALSE, or an object reports v2 | Your session's current schema was not one that resolves `ICEBERG_VERSION_DEFAULT = 3` when the table was created | Re-run `01_environment.sql` — it sets the database-level default and issues `USE SCHEMA` before each create. Then **recreate** any v2 table. |
 | `Unsupported data type 'VARIANT' for iceberg tables` | Same cause — the table resolved to v2 | Same fix. This is the error the journal throws, since `SF_METADATA` is `VARIANT`. |
 | `SHOW PARAMETERS` says 3 but a table comes out v2 | Not a contradiction. For a plain `CREATE ICEBERG TABLE` the version is applied from the *session's* schema, whatever the target schema reports | `USE SCHEMA MFG.RAW;` immediately before the `CREATE`. Never trust `SHOW PARAMETERS` as proof — only a created table's `iceberg_table_format_version` counts. |
 | `cortex_ok` is FALSE | `CORTEX_ENABLED_CROSS_REGION` still `DISABLED` | Re-run that `ALTER ACCOUNT` from Setup B as ACCOUNTADMIN in Snowsight. |
@@ -708,7 +723,7 @@ counted at their natural grain and ranked at read time instead.
 | Destination table stays behind the journal | That is the merge gate, by design | Check `QUERY_HISTORY` for the connector's `QUERY_TAG`. Merges fire at second :00 each minute. Nothing to fix. |
 | Destination table gets **no** rows at all | The producer was started with `--no-merge`, or the journal objects do not exist | Restart the producer without `--no-merge`, and confirm the journal and its stream exist. |
 | `SF_METADATA:offset_token` returns NULL | It holds a JSON string, not an object — faithful connector behaviour | `PARSE_JSON(SF_METADATA::STRING):offset_token` |
-| Telemetry rows take ~30 s to appear | `MAX_CLIENT_LAG` defaults to 30 s for Iceberg | Expected behaviour, not a fault. |
+| Telemetry rows take ~30 s to appear | Normal flush behaviour for a streaming Iceberg target | Expected behaviour, not a fault. |
 | Producer: `ERR_CHANNEL_HAS_UNCOMMITTED_DATA` (HTTP 409) | You stopped the producer and started it again within ~30 s, reopening a channel that was still committing | The lab never asks you to restart it — Part 5 changes modes through the control table instead. If you did stop it, wait ~30 s. Never run two producers at once. |
 | Producer: `externally-managed-environment` | macOS Homebrew Python, PEP 668 | Use the venv interpreter, not system Python. Ask Cortex Code to redo the venv step. |
 | Snowsight: `SQL compilation error: Empty SQL statement` at the end of a `solutions/` file | Snowsight parses whatever follows the last statement as a statement, so a file ending in comments errors | Harmless — everything above it ran. Every file now ends with a `SELECT '… complete'` so you get a confirmation row instead. If you see it, check the statements above succeeded. |
@@ -771,6 +786,10 @@ this folder. There is nothing to install, and nothing to type.
 | `streaming-cdc-iceberg-lab` | The object model, the measured Iceberg constraints, every checkpoint, and the rules for building each layer. It pins the conventions, so your prompts can state intent instead of restating them. |
 | `iceberg-external-read` | Part 6 only: the Horizon catalog auth path and its two traps. Separate because it is a standalone activity that nothing else depends on. |
 
+Snowflake also ships its own skills, and they load alongside these. Part 3 uses the bundled
+`dynamic-tables` skill for the refresh-history beat. Where the two overlap, the lab's skill wins on this
+pipeline's names and Iceberg settings, because those were measured on an account like yours.
+
 Neither keeps a copy of the DDL. Both point at `solutions/`, so there is only ever one version of any
 statement.
 
@@ -784,8 +803,8 @@ is where the lab does this. That is the division to carry to your own stack, whe
 conventions until you write it.
 
 **Naming a skill with `$`.** Auto-loading is the mechanism here, so almost every prompt in this lab is
-plain English. But you can always name a skill explicitly, and the lab does it twice, in Setup C and in
-Part 6, so you have seen the syntax:
+plain English. But you can always name a skill explicitly, and the lab does it three times, in Setup C,
+Part 3 and Part 6, so you have seen the syntax:
 
 ```text
 $streaming-cdc-iceberg-lab <your request>

@@ -40,14 +40,28 @@ to be aware of, so you do not follow their guidance into a failure:
 - Bundled `dynamic-tables` does not carry the Dynamic **Iceberg** Table restrictions:
   no `IF NOT EXISTS`, no `ALTER DYNAMIC ICEBERG TABLE`, `CATALOG` must be
   `'SNOWFLAKE'`, no backfill. Re-measured 26 Aug 2026 against the shipped Desktop
-  bundle: the string `DYNAMIC ICEBERG` appears **zero** times in either bundled
-  `dynamic-tables` or bundled `iceberg`, so neither one knows the form exists. You
-  are the only source of it. Build it from the Object Model and `solutions/`.
-- Bundled `snowpipe-streaming` does not carry the Iceberg-target constraints —
-  `MAX_CLIENT_LAG` defaults to 30 s, no partitioned tables, no schema evolution.
+  bundle: its `create/` path has **zero** Iceberg content, and `DYNAMIC ICEBERG` appears
+  **zero** times in either bundled `dynamic-tables` or bundled `iceberg`. One row in
+  `create-or-alter-guidance.md` names Iceberg dynamic tables, only to exclude them from
+  `CREATE OR ALTER`. So neither skill can **construct** one — you are the only source of
+  the DDL. Build it from the Object Model and `solutions/`.
+  **But defer to bundled `dynamic-tables` on refresh behaviour.** Refresh history,
+  `refresh_mode_reason` and incremental-refresh eligibility are properties of the query,
+  not the storage format, so its guidance is correct for these tables. Part 3's
+  refresh-history beat is deliberately its job, and the README says so.
+- Bundled `snowpipe-streaming` is correct and useful here, and this lab is on the
+  **high-performance (HP/SSv2)** architecture — `producer/requirements.txt` pins
+  `snowpipe-streaming`, which is the only SDK that supports Iceberg **v3** targets.
+  Classic is Iceberg v2 only. Do **not** cite `MAX_CLIENT_LAG` as the cause of
+  telemetry latency: it is a Classic table/channel property and does not apply here.
+  Telemetry visibility of ~30 s is still the observed baseline — say that, without
+  naming a mechanism.
 
-Never tell the attendee to install or invoke another skill. Everything needed is here
-or in `solutions/`.
+There is nothing for the attendee to **install** — every skill they need is already
+present, here or bundled with Cortex Code. One deliberate exception to "do not point at
+another skill": Part 3's refresh-history beat invites `$dynamic-tables`, because refresh
+behaviour genuinely is the bundled skill's domain and seeing it answer is one of the lab's
+learning outcomes. Everything about *this pipeline* stays here or in `solutions/`.
 
 ## Fixed context
 
@@ -117,7 +131,10 @@ optional, even though no plain Iceberg table is ever created there. Keep the
 `USE SCHEMA` before Dynamic Table creates anyway: it costs nothing, it matches the
 answer key, and it models the discipline the lab teaches.
 
-There is no in-place v2 → v3 upgrade. A table that came out v2 must be recreated.
+A table that came out v2 must be recreated for the purposes of this lab. (`ALTER ICEBERG
+TABLE … UPGRADE TO ICEBERG VERSION 3` does exist and was measured working on an empty
+table, but it is undocumented — the docs say the opposite — and it was **not** tested on a
+table carrying data, a stream, or a Dynamic Table. Do not offer it to an attendee mid-lab.)
 Always run the preflight (`solutions/02_preflight.sql`) after creating tables, and
 before building anything on top of them.
 
@@ -311,7 +328,7 @@ is nothing that can drift out of sync. Read the file, then:
 | 8 | `APPROX_PERCENTILE` forces a FULL refresh. Avoid it. |
 | 9 | Pin `TARGET_LAG` on every layer. `DOWNSTREAM` inherits from the consumer, so a "1 minute" pipeline can silently run at the consumer's lag. |
 | 10 | Snowpipe Streaming + Iceberg: no partitioned tables, no schema evolution, no length-constrained VARCHAR. |
-| 11 | `MAX_CLIENT_LAG` defaults to **30 s** for Iceberg targets, not ~1 s. This is deliberate, for Parquet file sizing. Expect ~30 s telemetry visibility, not instant. |
+| 11 | Telemetry visibility on a streaming Iceberg target is **~30 s**, not instant, while Snowflake sizes Parquet files. Observed on this account. **Do not attribute this to `MAX_CLIENT_LAG`** — that is a Snowpipe Streaming *Classic* property and this lab runs the HP/SSv2 SDK. The number is the measurement; the mechanism is not established. |
 | 12 | Dynamic Iceberg tables: no `IF NOT EXISTS`, no `ALTER DYNAMIC ICEBERG TABLE`, `CATALOG` must be `'SNOWFLAKE'`, no backfill. |
 
 ## Workflow
@@ -481,9 +498,9 @@ step numbers here, when you talk to them.
          DATEDIFF('second', MAX(EVENT_TS), CURRENT_TIMESTAMP()) AS seconds_ago
   FROM MFG.RAW.STATION_TELEMETRY;
   ```
-  All climb on re-run. Telemetry `seconds_ago` is ~30 s because of `MAX_CLIENT_LAG` —
-  expected, not a fault. The destination trails the journal by up to a minute — also
-  expected, and it is the next checkpoint.
+  All climb on re-run. Telemetry `seconds_ago` is ~30 s — expected, not a fault, and do
+  not name `MAX_CLIENT_LAG` as the reason. The destination trails the journal by up to a
+  minute — also expected, and it is the next checkpoint.
 - **G-gate (the merge gate):** `journal_inserts` exceeds `destination_rows`, and
   `QUERY_HISTORY` filtered on the connector's `QUERY_TAG` shows one MERGE per minute,
   each starting at second :00 and completing in a second or two. Both queries are in
@@ -529,7 +546,7 @@ with `SHOW AGENTS LIKE 'CASCADE_PLANT_ANALYST' IN SCHEMA MFG.ANALYTICS;`.
 - Do not create any Iceberg table without `USE SCHEMA` on the line before it.
 - Do not create any table before the storage defaults are set.
 - Do not proceed past Checkpoint P with any FALSE, or any object reporting v2.
-  There is no in-place v2 → v3 upgrade; a v2 table must be recreated.
+  Recreate a v2 table rather than trying to upgrade it in place.
 - Confirm the journal and its stream exist before starting the producer in `journal`
   mode — otherwise the events have nowhere to land.
 - Never stop or restart the producer to change its behaviour. Write to

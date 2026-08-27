@@ -71,8 +71,8 @@ DROP TABLE MFG.ANALYTICS._PREFLIGHT;
 USE SCHEMA MFG.RAW;
 
 -- Belt and braces: confirm the tables you already built are actually v3.
--- If STATION_TELEMETRY came out v2, recreate it -- Iceberg has no in-place
--- v2 -> v3 upgrade.
+-- If STATION_TELEMETRY came out v2, recreate it. That is the reliable fix, and
+-- it is cheap here because nothing is built on top of it yet.
 SHOW ICEBERG TABLES IN DATABASE MFG
   ->> SELECT "name", "iceberg_table_format_version" AS format_version,
              "iceberg_table_format_version" = 3 AS is_v3
