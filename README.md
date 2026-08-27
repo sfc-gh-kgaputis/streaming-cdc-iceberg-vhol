@@ -7,8 +7,7 @@ operational database lands in **Apache Iceberg** tables, **Dynamic Tables** refi
 and an **AI agent** explains what is happening on the plant floor. You build it by prompting
 **Cortex Code**, not by pasting SQL.
 
-You leave with one open lakehouse: governed by Snowflake, and readable by any engine that speaks
-Iceberg. In Part 6 you prove that from your own laptop.
+You leave with one open lakehouse: governed by Snowflake, readable by any engine that speaks Iceberg.
 
 ![Two feeds land in Snowflake-managed Apache Iceberg v3 tables, both over Snowpipe Streaming. Station telemetry streams straight into the STATION_TELEMETRY Iceberg table. In parallel, a simulated Openflow Postgres CDC connector appends change events to the QUALITY_INSPECTIONS_JOURNAL Iceberg table, and an APPEND_ONLY stream on that journal feeds a MERGE the connector issues itself on a thirty-second gate, maintaining the QUALITY_INSPECTIONS destination table with soft deletes. Four Dynamic Iceberg Tables refine both feeds incrementally on a one-minute target lag: STATION_HEALTH rolls up telemetry and INSPECTIONS_ACTIVE filters soft-deleted rows, then YIELD_BY_LINE_5MIN joins those two on line and five-minute bucket while DEFECT_COUNTS_5MIN counts defects at their natural grain. The semantic view PLANT_FLOOR_SV sits over three tables — YIELD_BY_LINE_5MIN, DEFECT_COUNTS_5MIN and STATION_HEALTH, which reaches the view directly as well as through the join — and a Cortex Agent answers questions through that view. Outside Snowflake, PyIceberg on your laptop reads the same gold Iceberg tables through the Horizon Catalog with vended credentials, using no warehouse.](docs/architecture.svg)
 
@@ -19,41 +18,34 @@ Iceberg. In Part 6 you prove that from your own laptop.
 a defect code. That inspection data lives in the plant's MES on Postgres. Separately, sensors on each
 station stream temperature, humidity, current and torque readings.
 
-Right now the plant manager gets a yield report at the end of shift. By then a bad run has already
-eaten a shift of material. She wants yield and scrap per line within a couple of minutes, so she can
-walk over and stop it.
-
-Two minutes is the target because a human has to walk to the paint booth. Sub-second precision is
-wasted on that loop, and end-of-shift batch is far too slow.
+Today yield is reported at end of shift, by which point a bad run has eaten a shift of material. The
+target is **two minutes**, because the decision it feeds is someone walking to the paint booth to stop
+the line. Match the latency to the loop it serves: sub-second is wasted here, end-of-shift is useless.
 
 ## What you will understand by the end
 
-The scenario is a bicycle plant, but nothing below is specific to manufacturing. Every capability here
-transfers to any domain with a mutating operational source and a metric somebody needs sooner than they
-are getting it. Read the plant as a worked example, not as the subject.
+Nothing below is specific to manufacturing. It applies wherever an operational source mutates and
+somebody needs a metric sooner than they are getting it.
 
-- **Two low-latency paths get operational data into Snowflake, and both land in an open table format.**
-  A managed CDC connector replicates a database including its **updates and deletes**, while a streaming
-  client writes high-volume telemetry beside it. Both target Apache Iceberg on Snowflake-managed
-  storage, so there is no bucket to provision and no IAM role to write. Here: a Postgres MES feed, and
-  per-station sensors at about 60 rows a second.
-- **Dynamic Tables are declarative incremental transformation.** You state the query and a target lag,
-  and Snowflake works out what changed and recomputes only that. No orchestrator, no schedule, no task.
-  Here: four layered Dynamic Iceberg Tables that stay `INCREMENTAL` while the tables underneath them are
-  being rewritten continuously.
-- **A late-arriving correction restates an aggregate that already reported.** This is the hard part of
-  building on a change feed, and the reason to bother: one wrong predicate silently corrupts a metric for
-  ever, and the right one lets history be revised. An append-only pipeline cannot do this — it
-  double-counts the change or drops it. Here: yield rises for a 5-minute bucket that had already closed.
-- **A semantic view is what makes a table answerable in plain language, and a second source is what
-  makes the answer causal.** The agent is only as good as the model beneath it, and one feed can tell you
-  *what* happened but never *why*. Here: the agent ties a sensor drift to a defect spike and gets the
-  order of the two right.
+- **Two low-latency paths land operational data in an open table format.** A managed CDC connector
+  replicates a database including its **updates and deletes**; a
+  [Snowpipe Streaming](https://docs.snowflake.com/en/user-guide/snowpipe-streaming/data-load-snowpipe-streaming-overview)
+  client writes high-volume telemetry beside it. Both target Apache Iceberg on Snowflake-managed storage,
+  so there is no bucket to provision and no IAM role to write.
+- **[Dynamic Tables](https://docs.snowflake.com/en/user-guide/dynamic-tables-about) are declarative
+  incremental transformation.** State the query and a target lag; Snowflake recomputes only what changed.
+  No orchestrator, no schedule, no task. Here: four layered Dynamic Iceberg Tables that stay
+  `INCREMENTAL` while the tables underneath them are rewritten continuously.
+- **A late-arriving correction restates an aggregate that already reported.** One wrong predicate
+  silently corrupts a metric for ever; the right one lets history be revised. An append-only pipeline
+  cannot do this. Here: yield rises for a 5-minute bucket that had already closed.
+- **A [semantic view](https://docs.snowflake.com/en/user-guide/views-semantic/overview) makes a table
+  answerable in plain language, and a second source makes the answer causal.** One feed tells you *what*
+  happened, never *why*. Here: the agent ties a sensor drift to a defect spike and gets the order right.
 - **The output is open Apache Iceberg, not a Snowflake format.** Any engine that speaks Iceberg reads the
-  same bytes, with no Snowflake compute in the path. Here: PyIceberg, on your own laptop, in Part 6.
-- **You build all of it by prompting rather than by pasting SQL.** A prompt that names the object, the
-  grain and the logic gets you the right table; a skill carries your conventions so you stop restating
-  them. Here: four Dynamic Tables from two prompts.
+  same bytes, with no Snowflake compute in the path. Here: PyIceberg on your laptop.
+- **You build it by prompting rather than pasting SQL.** A prompt that names the object, the grain and
+  the logic gets you the right table. Here: four Dynamic Tables from two prompts.
 
 ## What is real, and what is simulated
 
@@ -63,15 +55,14 @@ exercise rather than a data-engineering one. Everything downstream is what you w
 the Iceberg tables, the journal, the append-only stream, the MERGE, the Dynamic Tables, the semantic
 view, the agent.
 
-The simulator is faithful where it counts. It creates its own destination table, journal and stream,
-as the connector does. It writes the connector's journal schema, its three `EVENT_TYPE` shapes and its
-soft deletes, issues the MERGE on the connector's CRON eligibility gate with no Snowflake task, and
-stamps each merge with the connector's `QUERY_TAG`.
+It is faithful where it counts: it creates its own destination table, journal and stream, writes the
+connector's journal schema and soft deletes, and issues the MERGE on the connector's CRON gate with no
+Snowflake task.
 
-**Storage is Snowflake-managed Iceberg** (`EXTERNAL_VOLUME = 'SNOWFLAKE_MANAGED'`). Snowflake owns the
-bucket, the catalog and file maintenance, so there is no cloud storage to provision and no IAM role to
-write. The tables are still open Iceberg that any engine can read, which is what Part 6 demonstrates.
-Use format version **3**: the journal's `SF_METADATA` column is a `VARIANT`, and v2 rejects `VARIANT`.
+**Storage is [Snowflake-managed Iceberg](https://docs.snowflake.com/en/user-guide/tables-iceberg-storage)**
+(`EXTERNAL_VOLUME = 'SNOWFLAKE_MANAGED'`). Snowflake owns the bucket, the catalog and file maintenance:
+no cloud storage to provision, no IAM role to write, and the tables are still open Iceberg. Use format
+version **3** — the journal's `SF_METADATA` column is a `VARIANT`, which v2 rejects.
 
 ## What you need
 
@@ -232,9 +223,7 @@ Do these in order.
 
 # Run the lab
 
-Six Parts, then two optional acts. Do the optional acts if you are ahead.
-
-The six Parts map to three acts:
+The six Parts map to three acts. Do the optional acts if you are ahead.
 
 | Act | Parts | What you do in them |
 |---|---|---|
@@ -242,17 +231,10 @@ The six Parts map to three acts:
 | 2 — Continuous transformation | 3 | Layer four Dynamic Tables over both feeds |
 | 3 — Serve it: to an agent, and to any engine | 4, 5, 6 | Ask it questions, revise the history behind the answers, then read the tables from outside Snowflake |
 
-**Prompt** blocks are what you paste into Cortex Code, not SQL and not a shell command. Use the copy
-button in the block's top-right corner. **Fast path** blocks are finished SQL for the same step, and
-running one is a legitimate way through this lab. `solutions/` holds one file per Part for the same
-reason. If you fall behind, run the file and catch up; you will still see every checkpoint.
-
-Each Part names how you should drive Cortex Code:
-
-- **Sequential prompts.** One prompt, check, next prompt. Slowest and safest.
-- **Generate then confirm.** Let it propose the SQL, read it, then approve. Use this on DDL you care
-  about.
-- **Direct execution.** Let it run without reviewing each statement. Fine for read-only inspection.
+**Prompt** blocks are what you paste into Cortex Code, not SQL and not a shell command. **Fast path**
+blocks are the finished SQL for the same step, and `solutions/` holds one file per Part. If you fall
+behind, run the file and catch up; you will still hit every checkpoint. Each Part opens with how closely
+to review what Cortex Code proposes.
 
 ## Part 1 — Land both feeds in Iceberg
 
@@ -269,9 +251,8 @@ can see the `USE SCHEMA` statements below in context.
 Create the lab environment and both landing tables.
 ```
 
-Two schemas, so that provenance is readable off any fully-qualified name: a table in `RAW` arrived from
-outside, a table in `ANALYTICS` was computed for you. The split follows the shape of the pipeline rather
-than the shape of the feeds.
+Two schemas, so provenance reads off any fully-qualified name: `RAW` arrived from outside, `ANALYTICS`
+was computed for you.
 
 | Schema | Holds | Why |
 |---|---|---|
@@ -291,15 +272,15 @@ Confirm the version on the created table itself, with `iceberg_table_format_vers
 below does that for every object. If something lands on v2, recreate it.
 [Troubleshooting](#troubleshooting) has the details.
 
-Notice what the telemetry table's DDL does **not** contain: no `CATALOG`, no `EXTERNAL_VOLUME`, no
-version. It inherits all three, and the preflight is about to prove it did.
+The telemetry table's DDL contains no `CATALOG`, no `EXTERNAL_VOLUME` and no version. It inherits all
+three from the schema.
 
 **Checkpoint:** `SHOW ICEBERG TABLES IN DATABASE MFG` lists `STATION_TELEMETRY`, and
 `SHOW TABLES LIKE 'QUALITY_INSPECTIONS' IN SCHEMA MFG.RAW` lists a table that is **not** Iceberg. That
 asymmetry is deliberate: the CDC destination is a standard table because it is rewritten constantly.
 
-You created **one** data table just now. The connector creates three more for itself when you start it
-in Part 2: the CDC destination, the change journal and its stream. Part 2 shows you that happening.
+You created **one** data table. The connector creates three more for itself when you start it in Part 2:
+the CDC destination, the change journal and its stream.
 
 Now verify everything, before building anything on top:
 
@@ -454,9 +435,8 @@ DEFECT_COUNTS_5MIN: a count per line, 5-minute bucket and defect code from
 INSPECTIONS_ACTIVE, with no-defect rows counted as NONE.
 ```
 
-One feed tells you *what* happened; a second feed joined on the same grain tells you *why*. Here: yield
-and booth humidity in the same row for the same 5-minute interval, which makes the agent's causal answer
-possible in Part 5.
+Yield and booth humidity land in the same row for the same 5-minute interval. That join is what makes the
+agent's causal answer possible in Part 5.
 
 `AVG_BOOTH_HUMIDITY` is empty for WELD and ASSEMBLY. That is correct; booth humidity is a paint-booth
 metric.
@@ -467,7 +447,7 @@ Single-digit row counts are correct: three lines times the number of elapsed 5-m
 
 **Checkpoint:** all four Dynamic Tables now report `refresh_mode = INCREMENTAL`, and
 `YIELD_BY_LINE_5MIN` holds three rows per elapsed 5-minute bucket, single digits early on. It is
-much smaller than `QUALITY_INSPECTIONS` by design; that is what aggregation means.
+much smaller than `QUALITY_INSPECTIONS`, as an aggregate should be.
 
 **Prompt:**
 
@@ -501,7 +481,7 @@ Show me the lab progress query.
 ```
 
 **Checkpoint:** it lists every object you should have built by now with its row count, and flags
-anything missing. This is also the fastest way for the presenter to see who is stuck.
+anything missing.
 
 ## Part 4 — Ask it questions in English
 
@@ -523,8 +503,8 @@ Create the Cascade Plant Analyst agent over PLANT_FLOOR_SV.
 ```
 
 The agent's Analyst tool needs a warehouse named in `execution_environment`. Without it `CREATE AGENT`
-succeeds and then every question fails with an opaque internal error that mentions neither the
-warehouse nor the tool. The skill knows this; check the generated spec has it.
+succeeds and every question then fails with an opaque internal error naming neither the warehouse nor
+the tool. Check the generated spec has it.
 
 Now switch to **Snowsight → AI & ML → Agents → Cascade Plant Analyst** and use the chat panel on the
 detail page. You do not need to Publish. Ask the first two questions from
@@ -540,9 +520,9 @@ interval it used. Keep this tab open; you need it in Part 5.
 
 **Approach: direct execution**, then read.
 
-This Part demonstrates the two hard properties of any change feed: a **cause arrives before its
-effect**, and a **correction arrives after the aggregate has already reported**. Here: a paint booth
-drifts, and inspectors then overturn the frames it spoiled.
+Any change feed has two hard properties: a **cause arrives before its effect**, and a **correction
+arrives after the aggregate has already reported**. Here a paint booth drifts, then inspectors overturn
+the frames it spoiled.
 
 The producer is still running from Part 2, and it stays running. What changes is the **plant**, not the
 pipeline. You write a row to a control table and the running simulator picks it up within about
@@ -562,12 +542,11 @@ INSERT INTO MFG.RAW.SIMULATOR_CONTROL (MODE, UPDATED_AT)
 ```
 
 **Checkpoint:** the producer's log shows `booth_humidity` climbing away from 44 within seconds
-(`47.7`, `52.2`, `56.7`), and about 90 seconds later `[cdc] PAINT defect rate -> 26%`. You are watching
-cause precede effect in real time, before a single query.
+(`47.7`, `52.2`, `56.7`), and about 90 seconds later `[cdc] PAINT defect rate -> 26%`. Cause precedes
+effect, visible before any query.
 
-A real Openflow connector runs continuously; when a paint booth starts misbehaving nobody restarts the
-connector. The data changes character at the source and the pipeline carries it through untouched. The
-control table is the source changing its mind, and the streaming plumbing never notices.
+A real Openflow connector runs continuously: nobody restarts it because a booth misbehaved. The data
+changes character at the source and the pipeline carries it through untouched.
 
 Now watch the cascade arrive layer by layer, and time it:
 
@@ -601,15 +580,13 @@ INSERT INTO MFG.RAW.SIMULATOR_CONTROL (MODE, UPDATED_AT)
   VALUES ('REINSPECT', CURRENT_TIMESTAMP()::TIMESTAMP_NTZ);
 ```
 
-Inspectors re-check failed frames and overturn them to PASS. This is an `UPDATE` arriving over CDC,
-flowing through the journal and the MERGE, and it **rewrites history**: buckets that already reported
-now report better numbers. It works because of two things you already built: the journal's
-`IncrementalUpdateRows` events, which carry the new values (Part 2), and `INSPECTIONS_ACTIVE`'s
-soft-delete predicate (Part 3).
+Inspectors re-check failed frames and overturn them to PASS: an `UPDATE` arriving over CDC, through the
+journal and the MERGE, that **rewrites history** — buckets that already reported now report better
+numbers. It works because of two things you built earlier: the journal's `IncrementalUpdateRows` events
+(Part 2) and `INSPECTIONS_ACTIVE`'s soft-delete predicate (Part 3).
 
-**Checkpoint:** PAINT yield climbs back, including for earlier buckets, and the Dynamic Tables are
-still `INCREMENTAL`. An append-only pipeline cannot do this; it would have double-counted the frame or
-ignored the correction entirely.
+**Checkpoint:** PAINT yield climbs back, including for earlier buckets, and the Dynamic Tables are still
+`INCREMENTAL`. An append-only pipeline would have double-counted the frame or dropped the correction.
 
 ## Part 6 — Read it from your laptop
 
@@ -625,11 +602,10 @@ your venv from Setup D.
 
 **Checkpoint:** it prints Iceberg format version `v3`, a storage path under Snowflake's managed bucket
 (`s3://sfc-…-customer-interop-fs-…`), your rows, and a smaller row count after predicate pushdown on
-`LINE == 'PAINT'`. Those are the same bytes Snowflake reads, read by an engine that has never heard of
-Snowflake.
+`LINE == 'PAINT'`.
 
 Horizon catalog access is billed as external-engine access, including when the reader is another
-Snowflake account. Budget for it the way you would budget for any engine reading your lakehouse.
+Snowflake account. Budget for it as you would any engine reading your lakehouse.
 
 The auth path has two steps that are not in the PyIceberg docs, so read the script: it is 100 lines and
 the comments explain both. To be walked through it instead:
@@ -660,8 +636,7 @@ Show me SF_METADATA, what type it really is, and pull the offset token out of it
 connector writes. Parse it before you subscript it.
 
 **Checkpoint:** `SF_METADATA:offset_token` returns `NULL` and `TYPEOF(SF_METADATA)` says `VARCHAR`,
-while `PARSE_JSON(SF_METADATA::STRING):offset_token` returns an actual offset. A `VARIANT` column is not
-a promise that its contents are parsed.
+while `PARSE_JSON(SF_METADATA::STRING):offset_token` returns an actual offset.
 
 **Prompt:**
 
@@ -669,9 +644,8 @@ a promise that its contents are parsed.
 Find the connector's merges in query history using its query tag.
 ```
 
-The connector stamps every merge with a `QUERY_TAG` identifying itself, its operation and its merge
-strategy. Filtering `QUERY_HISTORY` on that tag is how you audit a real Openflow deployment, and it
-works identically here.
+The connector stamps every merge with a `QUERY_TAG` naming itself, its operation and its merge strategy.
+Filter `QUERY_HISTORY` on that tag.
 
 **Checkpoint:** roughly one MERGE per minute since you started the producer, each beginning at second
 `:00` and finishing in a second or two. Many short merges on a schedule, not one long-running one.
@@ -735,28 +709,27 @@ You start it **once**, in Part 2, with both sources:
 .venv/bin/python producer/main.py --profile producer/profile.json --cdc --telemetry
 ```
 
-That is the only command the lab asks you to run. The incident and the recovery are triggered by
-writing to `MFG.RAW.SIMULATOR_CONTROL` while it keeps streaming. See Part 5.
+That is the only command the lab asks you to run. Part 5's incident and recovery are triggered by
+writing to `MFG.RAW.SIMULATOR_CONTROL` while it keeps streaming.
 
 ```bash
 # see what it generates, no Snowflake account needed
 .venv/bin/python producer/main.py --dry-run --cdc --seed 42
 ```
 
-`--incident` and `--reinspect` also exist as startup flags, and `--no-control` ignores the control
-table entirely. Those are for someone rehearsing the lab from a shell. You do not need them, and using
-them means stopping the producer, which this design avoids.
+`--incident` and `--reinspect` also exist as startup flags, and `--no-control` ignores the control table
+entirely. They are for rehearsing from a shell, and they require stopping the producer. You do not need
+them.
 
 `--rate` sets scans/sec (default 2), `--telemetry-rate` sets telemetry rows/sec (default 60).
 `--seed` makes a run reproducible. `--help` lists the rest.
 
 `--cdc-mode` picks how the CDC half writes:
 
-- `journal` (default). The faithful path. Change events go to the journal over Snowpipe Streaming,
-  and the producer issues the MERGE on its CRON gate. This is what the lab teaches.
-- `direct`. Writes the settled result straight to `QUALITY_INSPECTIONS` with ordinary DML. No journal,
-  no stream, no merge gate. Use it only if the journal objects are missing and you need rows flowing
-  to catch up; it loses the merge gate and the two-path design.
+- `journal` (default). Change events go to the journal over Snowpipe Streaming, and the producer issues
+  the MERGE on its CRON gate. This is the path the lab uses.
+- `direct`. Writes the settled result straight to `QUALITY_INSPECTIONS` with ordinary DML: no journal, no
+  stream, no merge gate. Use it only if the journal objects are missing and you need rows flowing.
 
 # How the skills work
 
@@ -768,9 +741,6 @@ this folder. There is nothing to install, and nothing to type.
 | `streaming-cdc-iceberg-lab` | The object model, the measured Iceberg constraints, every checkpoint, and the rules for building each layer. It pins the conventions, so your prompts can state intent instead of restating them. |
 | `iceberg-external-read` | Part 6 only: the Horizon catalog auth path and its two traps. Separate because it is a standalone activity that nothing else depends on. |
 
-Neither keeps a copy of the DDL. Both point at `solutions/`, so there is only ever one version of any
-statement.
-
 A prompt like *"Run the preflight checks"* contains no object names, no schema, no Iceberg settings. It
 works because the skill already put all of that in context.
 
@@ -780,10 +750,8 @@ works because the skill already put all of that in context.
 $streaming-cdc-iceberg-lab <your request>
 ```
 
-It is a **fallback, never a requirement**: both skills auto-load anyway, so if you mistype the name
-nothing breaks and the work still happens. It is also the lever for getting back on track. If a prompt
-ever produces the wrong object name or ignores a constraint, prefix your next one with
-`$streaming-cdc-iceberg-lab` to force the lab's own rules to the front.
+You never have to: both auto-load. It is the lever for getting back on track — if a prompt produces the
+wrong object name or ignores a constraint, prefix the next one with `$streaming-cdc-iceberg-lab`.
 
 Read `SKILL.md` to see what a skill contains before you write one.
 
