@@ -10,7 +10,7 @@
 --
 -- HOW TO RUN: highlight one block and run it (Cmd/Ctrl+Enter).
 --   BLOCK 1  account settings
---   BLOCK 2  lab identity + token   -> copy the token into secret.pat
+--   BLOCK 2  lab identity + token   -> paste the token into profile.json
 --   BLOCK 3  your account identifier -> paste into Cortex Code
 -- =====================================================================
 
@@ -57,12 +57,13 @@ ALTER USER HOL_USER
     ROLE_RESTRICTION = 'ACCOUNTADMIN'
     DAYS_TO_EXPIRY = 7
     COMMENT = 'Iceberg CDC VHOL lab token';
--- >>> Copy token_secret NOW (it is shown once) into a file named secret.pat
--- >>> in the root of this repo. It is gitignored. <<<
+-- >>> Copy token_secret NOW (it is shown once). Copy profile.example.json to
+-- >>> profile.json in the root of this repo and paste it in as
+-- >>> personal_access_token. profile.json is gitignored. <<<
 -- If you miss it, docs/troubleshooting.md has the ROTATE statement.
 
 -- ================= BLOCK 3: your account identifier ==================
 -- Paste this value into Cortex Code's "Account identifier" field.
 SELECT CURRENT_ORGANIZATION_NAME() || '-' || CURRENT_ACCOUNT_NAME() AS account_identifier;
 
-SELECT 'bootstrap complete -- copy the token into secret.pat, then Setup C' AS status;
+SELECT 'bootstrap complete -- paste the token and account into profile.json, then Setup C' AS status;

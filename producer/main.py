@@ -9,13 +9,14 @@ Start it ONCE, in Part 2, and leave it running for the rest of the lab. Part 5
 changes the plant by writing to MFG.RAW.SIMULATOR_CONTROL (control.py); nothing
 here needs restarting.
 
-  python producer/main.py --profile producer/profile.json --cdc --telemetry
+  python producer/main.py --cdc --telemetry
   python producer/main.py --dry-run --cdc --seed 42      # no account needed
 """
 
 from __future__ import annotations
 
 import argparse
+import pathlib
 import signal
 import threading
 from typing import Any
@@ -38,7 +39,11 @@ def main() -> None:
     ap = argparse.ArgumentParser(
         description="Cascade Cycleworks plant-floor producer (CDC + telemetry)."
     )
-    ap.add_argument("--profile", help="path to profile.json (required unless --dry-run)")
+    ap.add_argument(
+        "--profile",
+        default=str(pathlib.Path(__file__).resolve().parent.parent / "profile.json"),
+        help="path to profile.json (default: profile.json in the repo root)",
+    )
     ap.add_argument("--cdc", action="store_true", help="run the CDC source")
     ap.add_argument("--telemetry", action="store_true", help="run the telemetry source")
     ap.add_argument(
@@ -125,8 +130,6 @@ def main() -> None:
 
     if not args.cdc and not args.telemetry:
         args.cdc = args.telemetry = True
-    if not args.dry_run and not args.profile:
-        ap.error("--profile is required unless --dry-run")
 
     profile = None
     if not args.dry_run:

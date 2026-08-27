@@ -89,6 +89,7 @@ Everything here is **pre-work**. Nothing installs during the session.
 | `docs/` | [Troubleshooting](docs/troubleshooting.md), [CDC internals](docs/cdc-internals.md), [producer reference](docs/producer.md), the architecture diagram, and the three agent questions. |
 | `dashboard/` | The live dashboard you deploy in Part 5. |
 | `.snowflake/` | Two Cortex Code skills that load automatically. See [How the skills work](#how-the-skills-work). |
+| `profile.example.json` | Copy to `profile.json` in Setup B. Your account and token, in one gitignored file, read by the producer and by Part 6. |
 
 ## Contents
 
@@ -163,32 +164,43 @@ Do these in order.
        COMMENT = 'Iceberg CDC VHOL lab token';
    ```
 
-3. **Copy the `token_secret` value now. It is shown once.** Create a file called `secret.pat` in the
-   root of this repo and paste the token into it. It is gitignored.
+3. **Copy the `token_secret` value now. It is shown once.** Make your credential file and paste the
+   token into it as `personal_access_token`. One file holds everything the producer and the external
+   reader need; it is gitignored, and the example it comes from is not.
 
-   Missed it? The token is unrecoverable, but you do not need to start over. Rotate it to get a fresh
+   ```bash
+   cp profile.example.json profile.json
+   ```
+
+   Missed the token? It is unrecoverable, but you do not need to start over. Rotate it to get a fresh
    one, in Snowsight as your signup admin:
 
    ```sql
    ALTER USER HOL_USER ROTATE PROGRAMMATIC ACCESS TOKEN HOL_PAT;
    ```
 
-   That returns a new `token_secret`. Copy *that* into `secret.pat`. Do not try to create the token by
-   prompting Cortex Code; it is not connected yet.
+   That returns a new `token_secret`. Paste *that* into `profile.json`. Do not try to create the token
+   by prompting Cortex Code; it is not connected yet.
 
-4. **Get your account identifier.** Run this and copy the result:
+4. **Get your account identifier** and paste it into the same file as `account`:
 
    ```sql
    SELECT CURRENT_ORGANIZATION_NAME() || '-' || CURRENT_ACCOUNT_NAME() AS account_identifier;
    ```
 
-   **Checkpoint:** `SHOW USERS LIKE 'HOL_USER'` returns one row, and you have the token text saved in
-   `secret.pat` and the account identifier on your clipboard.
+   Leave `user` and `authorization_type` as they are, and leave `url` empty — the producer fills it in
+   from `account` on its first run.
+
+   **Checkpoint:** `SHOW USERS LIKE 'HOL_USER'` returns one row, and your file has no placeholders left:
+
+   ```bash
+   grep -c 'MYORG\|PASTE_YOUR' profile.json    # must print 0
+   ```
 
 ## C. Connect Cortex Code Desktop as HOL_USER
 
 5. **Add the connection** using the `account_identifier` from step 4, user `HOL_USER`, authentication
-   **Password**, and the token from `secret.pat` pasted into the password field. Role `ACCOUNTADMIN`.
+   **Password**, and the token from `profile.json` pasted into the password field. Role `ACCOUNTADMIN`.
 
 6. **Confirm it.** This prompt also names a skill explicitly, which you can do by typing `/` and picking
    it from the list, or by naming it in the sentence (see [How the skills work](#how-the-skills-work)):
@@ -205,20 +217,19 @@ Do these in order.
 
 ## D. Set up the local environment
 
-7. **Build the virtual environment, install the dependencies, and write the producer profile.**
+7. **Build the virtual environment and install the dependencies.**
 
    **Prompt:**
 
    ```text
-   Set up the local environment: the venv, dependencies, and producer/profile.json.
+   Set up the local environment: the venv and dependencies, then check my profile.json.
    ```
 
    Both requirement sets install: `producer/requirements.txt` and `external/requirements.txt` for
    Part 6, so nothing installs during the session. Three packages, about fifteen seconds. Your token
-   is never printed to the chat.
+   stays in `profile.json` and is never printed to the chat.
 
-   **Checkpoint:** `producer/profile.json` exists with five keys, and both of these succeed without
-   touching Snowflake:
+   **Checkpoint:** both of these succeed without touching Snowflake:
 
    ```bash
    .venv/bin/python producer/main.py --dry-run --cdc --seed 42 --duration 3
@@ -695,8 +706,7 @@ Stop the spend: suspend the four Dynamic Tables and the warehouse, and keep my d
 four, or returns nothing at all if you removed them.
 
 Or run [`solutions/09_cleanup.sql`](solutions/09_cleanup.sql) yourself: Block 1 stops the spend and
-keeps your data, Block 2 removes everything. Then delete your local `secret.pat` and
-`producer/profile.json`.
+keeps your data, Block 2 removes everything. Then delete your local `profile.json`.
 
 # License
 

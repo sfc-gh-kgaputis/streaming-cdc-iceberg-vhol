@@ -9,9 +9,11 @@ Back to the walkthrough: [README](../README.md).
 | Symptom | Cause | Fix |
 |---|---|---|
 | You did not copy `token_secret` in time | It is shown exactly once | `ALTER USER HOL_USER ROTATE PROGRAMMATIC ACCESS TOKEN HOL_PAT;` in Snowsight returns a fresh one. Do not prompt Cortex Code for it — it is not connected yet. |
-| Producer: authentication fails | Token expired, or `profile.json` has the wrong account | Tokens last 7 days. Re-mint in Snowsight and rebuild `profile.json`. |
+| `profile.json is not valid JSON -- line N, column N` | A quote or comma lost while editing the file by hand | Compare against `profile.example.json`; the keys are identical. Only two values change: `account` and `personal_access_token`. |
+| `profile.json not found` | Setup B step 3 was skipped | `cp profile.example.json profile.json`, then fill in the account and the token. |
+| Producer: authentication fails | Token expired, or `profile.json` has the wrong account | Tokens last 7 days. Re-mint or ROTATE in Snowsight, then paste the new token into `profile.json`. |
 | A token is refused even though it was just minted | A programmatic access token only authenticates if its user sits under a network policy | Attach one before minting: `CREATE NETWORK POLICY IF NOT EXISTS HOL_NP ALLOWED_IP_LIST = ('0.0.0.0/0'); ALTER USER HOL_USER SET NETWORK_POLICY = HOL_NP;` — `00_bootstrap.sql` BLOCK 2 does this. |
-| Wrong account shows up in `profile.json` | The `cortex` CLI's default connection was used instead of the active one | The account must come from SQL: `SELECT CURRENT_ORGANIZATION_NAME() \|\| '-' \|\| CURRENT_ACCOUNT_NAME()`. |
+| Wrong account in `profile.json` | The `cortex` CLI's default connection was read instead of the active one | The account must come from SQL: `SELECT CURRENT_ORGANIZATION_NAME() \|\| '-' \|\| CURRENT_ACCOUNT_NAME()`. |
 | Producer: `externally-managed-environment` | macOS Homebrew Python, PEP 668 | Use the venv interpreter, not system Python. Ask Cortex Code to redo the venv step. |
 | `cortex_ok` is FALSE | `CORTEX_ENABLED_CROSS_REGION` still `DISABLED` | Re-run that `ALTER ACCOUNT` from Setup B as ACCOUNTADMIN in Snowsight. |
 

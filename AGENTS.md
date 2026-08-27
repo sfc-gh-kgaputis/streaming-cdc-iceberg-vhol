@@ -21,7 +21,7 @@ hands-on lab. Setup, the walkthrough, and troubleshooting are in
   explains why each object is shaped the way it is, not just the DDL. When something
   goes wrong, go to [docs/troubleshooting.md](docs/troubleshooting.md) instead.
 - **Never commit a credential.** The lab mints a token for you. `.gitignore` already
-  excludes `secret.pat`, `profile.json`, and key files. Keep it that way — this repo
+  excludes `profile.json` and key files. Keep it that way — this repo
   is public.
 
 ## Two things to set before you build

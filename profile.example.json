@@ -1,7 +1,7 @@
 {
   "account": "MYORG-MYACCOUNT",
   "user": "HOL_USER",
-  "url": "https://MYORG-MYACCOUNT.snowflakecomputing.com:443",
+  "url": "",
   "authorization_type": "PAT",
   "personal_access_token": "PASTE_YOUR_TOKEN_SECRET_HERE"
 }

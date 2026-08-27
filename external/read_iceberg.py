@@ -5,7 +5,7 @@ Uses PyIceberg against the Horizon Catalog REST endpoint with vended credentials
 
 Usage:  python external/read_iceberg.py [NAMESPACE.TABLE]
 Default table: ANALYTICS.YIELD_BY_LINE_5MIN   (database: MFG)
-Config: producer/profile.json + secret.pat (or env HORIZON_PAT)
+Config: profile.json in the repo root (or env HORIZON_PAT for the token)
 """
 import json
 import os
@@ -19,22 +19,28 @@ REPO = Path(__file__).parent.parent
 DB   = "MFG"    # Horizon: warehouse = database name, must be UPPERCASE
 ROLE = "ACCOUNTADMIN"
 
-# -- load account identifier from producer/profile.json -----------------------
-profile_path = REPO / "producer" / "profile.json"
+# -- load account and token from the one profile.json --------------------------
+profile_path = REPO / "profile.json"
 if not profile_path.exists():
-    sys.exit(f"ERROR: {profile_path} not found — do Setup D in the README first.")
-cfg     = json.loads(profile_path.read_text())
+    sys.exit(f"ERROR: {profile_path} not found — do Setup B in the README first.")
+try:
+    cfg = json.loads(profile_path.read_text())
+except json.JSONDecodeError as e:
+    sys.exit(f"ERROR: {profile_path} is not valid JSON — line {e.lineno},"
+             f" column {e.colno}: {e.msg}")
 ACCOUNT = cfg["account"].upper()
 BASE    = f"https://{ACCOUNT}.snowflakecomputing.com/polaris/api/catalog"
 
-# -- load PAT (never printed) --------------------------------------------------
-pat_path = REPO / "secret.pat"
+# -- the PAT (never printed). HORIZON_PAT wins, for running against another account.
 if env_pat := os.environ.get("HORIZON_PAT"):
     PAT = env_pat.strip()
-elif pat_path.exists():
-    PAT = pat_path.read_text().strip()
+elif token := cfg.get("personal_access_token", "").strip():
+    PAT = token
 else:
-    sys.exit(f"ERROR: {pat_path} not found and HORIZON_PAT env var is not set.")
+    sys.exit(
+        f"ERROR: no token. Set personal_access_token in {profile_path}, "
+        "or export HORIZON_PAT."
+    )
 
 # -- Step 1: exchange PAT for a short-lived access token -----------------------
 # The catalog endpoint rejects a PAT presented directly as a Bearer token (401).

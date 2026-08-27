@@ -211,16 +211,19 @@ macOS/Linux: `python3 -m venv .venv`, then `.venv/bin/python` and `.venv/bin/pip
 PyIceberg for Part 6, installed now because nothing may install during the session. Confirm with
 `<venv-python> -c "import pyiceberg, snowflake.connector"` before calling Setup D done.
 
-Then build `producer/profile.json` from `producer/profile.example.json` with
-`authorization_type: "PAT"`. `user` is always `HOL_USER` — set it literally, do not query it.
-Get `account` from SQL on the active connection:
-`SELECT CURRENT_ORGANIZATION_NAME() || '-' || CURRENT_ACCOUNT_NAME() AS account;`. **Do not use
-`snowflake_connections_list` or the `cortex` CLI for the account** — those resolve to the CLI's
-default connection, often a different account entirely. Derive `url` as
-`https://<account>.snowflakecomputing.com:443`. Fill `personal_access_token` by reading
-`secret.pat` **inside a shell command** (e.g. a `python3 -c` one-liner that opens the file and
-writes the JSON) so the token is never printed to chat and never read into your context. If
-`secret.pat` is missing, ask the attendee to paste their `HOL_PAT` into it first.
+Then **verify** the attendee's `profile.json` in the repo root. **You do not create it** — they write
+it in Setup B from `profile.example.json`, because the token is theirs and must not pass through
+chat. Check it **inside a shell command** (e.g. a `python3 -c` one-liner) so the token is never
+printed and never read into your context: confirm the file parses as JSON, that `user` is
+`HOL_USER`, and that neither `MYORG` nor `PASTE_YOUR` survives anywhere in it. Report only which
+check failed, never a value. If it is missing, ask the attendee to do Setup B step 3.
+
+`url` may be empty; the producer derives it from `account` on first run and writes it back. Do not
+fill it yourself, and **do not "fix" `account` from the `cortex` CLI or `snowflake_connections_list`**
+— those resolve to the CLI's default connection, often a different account entirely. If `account`
+looks wrong, have the attendee re-run
+`SELECT CURRENT_ORGANIZATION_NAME() || '-' || CURRENT_ACCOUNT_NAME();` on the active connection and
+paste the result in themselves.
 
 **Part 1 — environment and landing tables.** Create `MFG`, schemas `RAW` and `ANALYTICS`, the
 database version default, the three Iceberg defaults on both schemas, `HOL_WH`, and
@@ -234,7 +237,7 @@ three on first run. `SIMULATOR_CONTROL` is small but load-bearing: without it th
 
 **Part 2 — start the producer, then inspect the journal.** Start it **in the background** (Bash
 `run_in_background`) with the venv interpreter, so it keeps streaming while later layers build:
-`<venv-python> producer/main.py --profile producer/profile.json --cdc --telemetry`.
+`<venv-python> producer/main.py --cdc --telemetry`.
 Checkpoint J, then Checkpoint I. Then walk the change events, the three `EVENT_TYPE` shapes and
 above all the **merge gate** — the journal always leads the destination, and each MERGE fires at
 second :00 and finishes in a second or two. Checkpoint G-gate. Close by telling the attendee to

@@ -1,6 +1,8 @@
 # Secrets and local config — never commit
-secret.pat
+# profile.json (repo root) is the live one. The other two are paths this lab used
+# earlier; kept because this repo is public and a stale token must never land in it.
 profile.json
+secret.pat
 producer/profile.json
 *.p8
 *.pem

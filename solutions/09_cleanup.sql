@@ -66,7 +66,7 @@ DROP WAREHOUSE IF EXISTS HOL_WH;
 -- DROP NETWORK POLICY IF EXISTS HOL_NP;
 -- (List tokens: SHOW USER PROGRAMMATIC ACCESS TOKENS FOR USER HOL_USER;)
 
--- Finally, delete your local secret.pat and producer/profile.json.
+-- Finally, delete your local profile.json.
 
 -- A trailing real statement, deliberately: Snowsight parses text after the last
 -- statement as a statement, so a file ENDING in comments throws

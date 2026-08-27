@@ -6,7 +6,7 @@ finds the SDK: `.venv/bin/python` on macOS/Linux, `.venv\Scripts\python.exe` on 
 [Part 2](../README.md#part-2--watch-the-connectors-change-feed) starts it once, with both sources:
 
 ```bash
-.venv/bin/python producer/main.py --profile producer/profile.json --cdc --telemetry
+.venv/bin/python producer/main.py --cdc --telemetry
 ```
 
 Part 5's incident and recovery are triggered by writing to `MFG.RAW.SIMULATOR_CONTROL` while it keeps

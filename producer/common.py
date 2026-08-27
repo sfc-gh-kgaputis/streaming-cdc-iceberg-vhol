@@ -117,21 +117,63 @@ def _credential_works(profile: dict[str, Any]) -> bool:
         cn.close()
 
 
+def _load_profile(path: pathlib.Path) -> dict[str, Any]:
+    """Read profile.json, with errors an attendee can act on.
+
+    This file is hand-edited from `profile.example.json`, so a syntax error is a
+    normal outcome rather than an exceptional one. `json` reports it as a line and
+    column against a file it does not name, which is not enough to fix it.
+    """
+    if not path.exists():
+        log("")
+        log(f"[profile] FATAL: {path} not found.")
+        log("[profile] Copy profile.example.json to profile.json, then fill in two values:")
+        log("[profile]   account                : from Setup B step 4")
+        log("[profile]   personal_access_token  : the token_secret from Setup B step 2")
+        log("")
+        raise SystemExit(2)
+
+    text = path.read_text()
+    try:
+        return json.loads(text)
+    except json.JSONDecodeError as e:
+        log("")
+        log(f"[profile] FATAL: {path} is not valid JSON -- line {e.lineno},"
+            f" column {e.colno}: {e.msg}")
+        log("[profile] Most likely a missing quote or a trailing comma from editing by hand.")
+        log("[profile] Compare it against profile.example.json; the keys are the same.")
+        log("")
+        raise SystemExit(2) from None
+
+
+def _derive_url(account: str) -> str:
+    """The SDK wants an explicit `url`, which is just the account in a template."""
+    return f"https://{account}.snowflakecomputing.com:443"
+
+
 def repair_profile(profile_path: str, verify: bool = True) -> dict[str, Any]:
     """Verify profile.json, and repair it ONLY if a candidate fix actually works.
 
-    Deliberately never repairs blind. An earlier version pinned the user and took
-    `secret.pat` as the source of truth unconditionally, which is wrong in both
-    directions: it would clobber a deliberately different user, and -- worse -- a
-    stale `secret.pat` would overwrite a *working* token and break a setup that was
-    fine. So the order is: try what is on disk, and only change it if a candidate
-    both differs and authenticates.
+    Deliberately never repairs blind: it tries what is on disk first, and only
+    changes something if a candidate both differs and authenticates. An earlier
+    design kept the token in a second file and treated that as the source of truth
+    unconditionally, which could overwrite a *working* token with a stale one. One
+    file removes the reconciliation entirely.
 
     The Snowpipe Streaming SDK reads this file itself (`profile_json=`), so a fix
     has to land on disk; pinning values in Python is not enough.
     """
     path = pathlib.Path(profile_path)
-    profile = json.loads(path.read_text())
+    profile = _load_profile(path)
+
+    # `url` is `account` in a template, so it is the field most likely to be left
+    # on the example's placeholder after the account is filled in. Derived rather
+    # than asked for, and written back because the SDK reads the file, not us.
+    account = profile.get("account", "")
+    if account and profile.get("url") != _derive_url(account):
+        profile["url"] = _derive_url(account)
+        path.write_text(json.dumps(profile, indent=2) + "\n")
+        log(f"[profile] set url from account -> {profile['url']}")
 
     if not verify:
         return profile
@@ -149,25 +191,12 @@ def repair_profile(profile_path: str, verify: bool = True) -> dict[str, Any]:
         c["user"] = LAB_USER
         candidates.append((f"user {profile.get('user')!r} -> {LAB_USER!r}", c))
 
-    secret = path.parent.parent / "secret.pat"
-    if secret.exists():
-        token = secret.read_text().strip()
-        if token and token != profile.get("personal_access_token"):
-            c = dict(profile)
-            c["personal_access_token"] = token
-            candidates.append(("token -> the one in secret.pat", c))
-            if profile.get("user") != LAB_USER:
-                c2 = dict(c)
-                c2["user"] = LAB_USER
-                candidates.append((f"user -> {LAB_USER!r} AND token -> secret.pat", c2))
-
     for label, candidate in candidates:
         if _credential_works(candidate):
             path.write_text(json.dumps(candidate, indent=2) + "\n")
             log("")
             log("[profile] WARNING: profile.json was wrong and has been REPAIRED IN PLACE.")
             log(f"[profile] WARNING: changed {label}.")
-            log("[profile] WARNING: re-run Setup D if the producer fails again.")
             log("")
             return candidate
 
@@ -177,10 +206,10 @@ def repair_profile(profile_path: str, verify: bool = True) -> dict[str, Any]:
     log("[profile] FATAL: could not authenticate, and no known repair worked.")
     log(f"[profile]   account : {profile.get('account')}")
     log(f"[profile]   user    : {profile.get('user')}  (the PAT must belong to this user)")
-    log(f"[profile]   token   : {'present' if profile.get('personal_access_token') else 'MISSING'}"
-        f" in profile.json, secret.pat {'exists' if secret.exists() else 'MISSING'}")
+    log(f"[profile]   token   : {'present' if profile.get('personal_access_token') else 'MISSING'}")
     log("[profile] Check, in order:")
-    log("[profile]   1. secret.pat holds the token_secret from Setup B, whole and unwrapped")
+    log("[profile]   1. personal_access_token holds the token_secret from Setup B, whole")
+    log("[profile]      and unwrapped, with no surrounding quotes or newline")
     log(f"[profile]   2. that token was minted for {LAB_USER}, not for your signup admin")
     log("[profile]   3. it has not expired -- tokens last 7 days; re-mint or ROTATE in Snowsight")
     log("[profile]   4. account is your trial account, not another one you have a connection to")
