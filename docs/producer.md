@@ -22,7 +22,8 @@ entirely. They are for rehearsing from a shell, and they require stopping the pr
 them.
 
 `--rate` sets scans/sec (default 2), `--telemetry-rate` sets telemetry rows/sec (default 60).
-`--seed` makes a run reproducible. `--help` lists the rest.
+`--seed` makes the sequence of scans reproducible, including their `INSPECTION_ID`s. Timestamps are
+wall-clock, so those still differ between runs. `--help` lists the rest.
 
 `--cdc-mode` picks how the CDC half writes:
 

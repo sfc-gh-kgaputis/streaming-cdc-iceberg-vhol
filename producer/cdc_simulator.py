@@ -28,7 +28,6 @@ import random
 import sys
 import threading
 import time
-import uuid
 from datetime import timedelta
 from typing import Any
 
@@ -352,7 +351,7 @@ class CdcSimulator:
 
         now = utcnow()
         return {
-            "INSPECTION_ID": f"S-{uuid.uuid4().hex[:12]}",
+            "INSPECTION_ID": f"S-{self.rng.getrandbits(48):012x}",
             "UNIT_ID": f"F-{self.frame_seq:06d}",
             "LINE": line,
             "SKU": self.rng.choice(SKUS),

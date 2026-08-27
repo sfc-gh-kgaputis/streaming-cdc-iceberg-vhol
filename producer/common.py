@@ -70,8 +70,17 @@ _stop = threading.Event()
 
 def log(msg: str) -> None:
     """Progress goes to stderr so it does not flood a chat transcript when the
-    producer runs in the background."""
-    print(msg, file=sys.stderr, flush=True)
+    producer runs in the background.
+
+    Every line carries a UTC wall-clock stamp, because two checkpoints are read
+    off this log rather than off a query: the merge gate fires at second :00 of
+    each minute, and Part 5 asks you to stopwatch the cascade layer by layer.
+    """
+    print(
+        f"{datetime.now(timezone.utc).strftime('%H:%M:%S')} {msg}",
+        file=sys.stderr,
+        flush=True,
+    )
 
 
 def utcnow() -> datetime:

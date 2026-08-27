@@ -313,9 +313,9 @@ Start the producer in the background with both sources, then verify rows are lan
 targets and says so:
 
 ```
-[connector] destination table ready
-[connector] journal ready
-[connector] journal stream ready
+10:02:14 [connector] destination table ready
+10:02:14 [connector] journal ready
+10:02:15 [connector] journal stream ready
 ```
 
 Those three lines print whether the connector created the objects or found them already there. A managed
@@ -333,9 +333,9 @@ changes the data at the source instead.
 **Keep its output visible.** It reports the plant floor every 15 seconds, and every merge as it fires:
 
 ```
-[telem] rows=1860 booth_humidity~44.0
-[merge] gate fired: 122 rows applied in 1.5s (merges=1 rows_total=122)
-[cdc] inserts=62 updates=0 soft_deletes=1
+10:03:30 [telem] rows=1860 booth_humidity~44.0
+10:04:00 [merge] gate fired: 122 rows applied in 1.5s (merges=1 rows_total=122)
+10:04:00 [cdc] inserts=62 updates=0 soft_deletes=1
 ```
 
 In Part 5 this log shows the incident several seconds before any query does.
@@ -376,7 +376,8 @@ default rate. It grows until the gate fires, drops, and grows again. A gap that 
 the merge is not running; a gap of zero means you are looking between a merge and its next batch.
 
 **Checkpoint:** the journal count **exceeds** the destination count. That gap is the merge gate, not a
-backlog. Each merge starts at second **:00** of a minute and finishes in a second or two. So the
+backlog. Each merge starts at second **:00** of a minute and finishes in a second or two — read that
+straight off the producer's log, where every `[merge] gate fired` line is stamped `:00`. So the
 latency here is a schedule you chose, not a throughput limit.
 
 **Build on the destination table, `QUALITY_INSPECTIONS`, never on the journal.** The journal is
